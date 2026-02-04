@@ -65,6 +65,9 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم تسجيل الدخول بنجاح'), backgroundColor: Colors.green),
       );
+      
+      // Navigate to Home Screen
+      Navigator.pushReplacementNamed(context, '/home');
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
