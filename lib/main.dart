@@ -44,6 +44,8 @@ import 'screens/notary_accounting_screen.dart';
 import 'screens/contracts_agencies_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/electronic_services_screen.dart';
+import 'screens/edit_profile_screen.dart';
+import 'screens/change_password_screen.dart';
 
 void main() {
   runZonedGuarded(() async {
@@ -102,11 +104,29 @@ class MyApp extends StatelessWidget {
               ),
             ),
             home: showOnboarding ? const OnboardingScreen() : const AuthWrapper(),
+
             routes: {
               '/login': (context) => const LoginScreen(),
               '/register': (context) => const RegisterScreen(),
               '/home': (context) => const HomeScreen(),
+              '/profile': (context) => const EditProfileScreen(),
+              '/change-password': (context) => const ChangePasswordScreen(),
               '/electronic-services': (context) => const ElectronicServicesScreen(),
+              '/services': (context) => const ServicesScreen(),
+              '/legal-library': (context) => const LegalLibraryScreen(),
+              '/smart-assistant': (context) => const SmartAssistantScreen(),
+              '/inquiries': (context) => const InquiriesScreen(),
+              '/daily-sessions': (context) => const DailySessionsScreen(),
+              '/electronic-lawsuit': (context) => const ElectronicLawsuitScreen(),
+              '/laws': (context) => const LawsScreen(),
+              '/training': (context) => const TrainingScreen(),
+              '/supreme-court': (context) => const SupremeCourtScreen(),
+              '/blog': (context) => const BlogScreen(),
+              '/faq': (context) => const FAQScreen(),
+              '/about-us': (context) => const AboutUsScreen(),
+              '/contact-us': (context) => const ContactUsScreen(),
+              '/notifications': (context) => const NotificationsScreen(),
+              '/subscribe': (context) => const SubscribeScreen(),
             },
           );
         },

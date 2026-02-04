@@ -789,6 +789,7 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'الملف الشخصي',
               onTap: () {
                 Navigator.pop(context);
+                Navigator.pushNamed(context, '/profile');
               },
             ),
             _buildDrawerItem(
