@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 
-/// Login Screen
+/// Login Screen - المحسنة مع ميزة الحفظ التلقائي والدخول كضيف
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -15,6 +16,24 @@ class _LoginScreenState extends State<LoginScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _rememberMe = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedUsername();
+  }
+
+  // تحميل اسم المستخدم المحفوظ تلقائياً
+  Future<void> _loadSavedUsername() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUsername = prefs.getString('saved_username');
+    if (savedUsername != null && mounted) {
+      setState(() {
+        _usernameController.text = savedUsername;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -24,200 +43,198 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
-    print('🚀 [Login] Starting login process...');
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
-    // Clear any previous error messages
     ScaffoldMessenger.of(context).clearSnackBars();
     
-    print('🔑 [Login] Calling authProvider.login...');
     final success = await authProvider.login(
       _usernameController.text.trim(),
       _passwordController.text,
     );
 
-    print('📊 [Login] Login result: success=$success, isAuthenticated=${authProvider.isAuthenticated}, currentUser=${authProvider.currentUser?.username}');
-    print('📊 [Login] Error message: ${authProvider.errorMessage}');
-
-    if (!mounted) {
-      print('⚠️ [Login] Widget not mounted, returning');
-      return;
-    }
-
-    if (success) {
-      // Verify user is actually authenticated
-      if (authProvider.isAuthenticated && authProvider.currentUser != null) {
-        print('✅ [Login] Login successful, user authenticated');
-        // Navigation will be handled by the main app based on auth state
-        // Show success message briefly
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم تسجيل الدخول بنجاح'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
+    if (success && mounted) {
+      // حفظ اسم المستخدم إذا كان خيار "تذكرني" مفعلاً
+      final prefs = await SharedPreferences.getInstance();
+      if (_rememberMe) {
+        await prefs.setString('saved_username', _usernameController.text.trim());
       } else {
-        print('⚠️ [Login] Success=true but user not authenticated');
-        // Success returned true but user is not authenticated
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              authProvider.errorMessage ?? 
-              'تم تسجيل الدخول ولكن فشل تحميل معلومات المستخدم'
-            ),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        await prefs.remove('saved_username');
       }
-    } else {
-      print('❌ [Login] Login failed');
-      // Show error message
-      final errorMessage = authProvider.errorMessage ?? 'فشل تسجيل الدخول';
-      print('📝 [Login] Showing error: $errorMessage');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تسجيل الدخول بنجاح'), backgroundColor: Colors.green),
+      );
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            errorMessage,
-            style: const TextStyle(fontSize: 14),
-          ),
+          content: Text(authProvider.errorMessage ?? 'فشل تسجيل الدخول'),
           backgroundColor: Colors.red,
-          duration: const Duration(seconds: 8),
-          action: SnackBarAction(
-            label: 'إغلاق',
-            textColor: Colors.white,
-            onPressed: () {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            },
-          ),
         ),
       );
     }
   }
 
+  void _handleGuestLogin() {
+    // توجيه المستخدم للشاشة الرئيسية كضيف (بدون تسجيل دخول حقيقي)
+    // يمكن إضافة منطق خاص بالضيف في الـ AuthProvider لاحقاً إذا لزم الأمر
+    Navigator.pushReplacementNamed(context, '/home');
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('أهلاً بك! أنت تتصفح التطبيق كضيف الآن.'), backgroundColor: Colors.blue),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Logo/Icon
-                  Icon(
-                    Icons.gavel,
-                    size: 80,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Title
-                  Text(
-                    'منصة SmartJudi القضائية',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colorScheme.primaryContainer.withOpacity(0.3),
+              Colors.white,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // الشعار
+                    Hero(
+                      tag: 'app_logo',
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withOpacity(0.2),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
                         ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'تسجيل الدخول',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                  ),
-                  const SizedBox(height: 48),
-                  
-                  // Username field
-                  TextFormField(
-                    controller: _usernameController,
-                    decoration: const InputDecoration(
-                      labelText: 'اسم المستخدم',
-                      prefixIcon: Icon(Icons.person),
-                      border: OutlineInputBorder(),
-                    ),
-                    textDirection: TextDirection.rtl,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'يرجى إدخال اسم المستخدم';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Password field
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    decoration: InputDecoration(
-                      labelText: 'كلمة المرور',
-                      prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
+                        child: Icon(Icons.gavel_rounded, size: 70, color: colorScheme.primary),
                       ),
-                      border: const OutlineInputBorder(),
                     ),
-                    textDirection: TextDirection.rtl,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'يرجى إدخال كلمة المرور';
-                      }
-                      return null;
-                    },
-                  ),
-                          const SizedBox(height: 16),
-                          
-                          // Register link
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/register');
-                            },
-                            child: const Text('ليس لديك حساب؟ إنشاء حساب جديد'),
-                          ),
-                          
-                          const SizedBox(height: 16),
-                          
-                          // Login button
-                          Consumer<AuthProvider>(
-                    builder: (context, authProvider, child) {
-                      return ElevatedButton(
-                        onPressed: authProvider.isLoading ? null : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                    const SizedBox(height: 30),
+
+                    const Text(
+                      'SmartJudi',
+                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Color(0xFF1E3A8A)),
+                    ),
+                    const Text('منصة الخدمات القضائية الذكية', style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+                    const SizedBox(height: 50),
+
+                    // حقل اسم المستخدم
+                    TextFormField(
+                      controller: _usernameController,
+                      decoration: InputDecoration(
+                        labelText: 'اسم المستخدم',
+                        prefixIcon: const Icon(Icons.person_outline),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      validator: (v) => v!.isEmpty ? 'يرجى إدخال اسم المستخدم' : null,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // حقل كلمة المرور
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      decoration: InputDecoration(
+                        labelText: 'كلمة المرور',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                         ),
-                        child: authProvider.isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text(
-                                'تسجيل الدخول',
-                                style: TextStyle(fontSize: 16),
-                              ),
-                      );
-                    },
-                  ),
-                ],
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      validator: (v) => v!.isEmpty ? 'يرجى إدخال كلمة المرور' : null,
+                    ),
+
+                    // خيار تذكرني
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _rememberMe,
+                          onChanged: (v) => setState(() => _rememberMe = v!),
+                          activeColor: colorScheme.primary,
+                        ),
+                        const Text('تذكر اسم المستخدم', style: TextStyle(fontFamily: 'Cairo', fontSize: 13)),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () {}, // إضافة استعادة كلمة المرور لاحقاً
+                          child: const Text('نسيت كلمة المرور؟', style: TextStyle(fontFamily: 'Cairo', fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // زر تسجيل الدخول
+                    Consumer<AuthProvider>(
+                      builder: (context, auth, _) => SizedBox(
+                        width: double.infinity,
+                        height: 55,
+                        child: ElevatedButton(
+                          onPressed: auth.isLoading ? null : _handleLogin,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E3A8A),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                            elevation: 5,
+                          ),
+                          child: auth.isLoading
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : const Text('تسجيل الدخول', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 15),
+
+                    // زر الدخول كضيف
+                    SizedBox(
+                      width: double.infinity,
+                      height: 55,
+                      child: OutlinedButton(
+                        onPressed: _handleGuestLogin,
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF1E3A8A)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        ),
+                        child: const Text('تصفح كضيف', style: TextStyle(fontSize: 16, fontFamily: 'Cairo', color: Color(0xFF1E3A8A))),
+                      ),
+                    ),
+
+                    const SizedBox(height: 30),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('ليس لديك حساب؟', style: TextStyle(fontFamily: 'Cairo')),
+                        TextButton(
+                          onPressed: () => Navigator.pushNamed(context, '/register'),
+                          child: const Text('إنشاء حساب جديد', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -226,4 +243,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

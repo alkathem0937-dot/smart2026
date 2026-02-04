@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'webview_screen.dart';
 
 /// Electronic Services Screen - الخدمات الإلكترونية والروابط
@@ -65,34 +66,66 @@ class ElectronicServicesScreen extends StatelessWidget {
     },
   ];
 
-  void _openURL(String url, String title, BuildContext context) {
-    if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('لا يوجد رابط متاح لهذه الخدمة'),
-          backgroundColor: Colors.orange,
+  void _handleLinkTap(BuildContext context, String url, String title) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Cairo',
+              ),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.apps, color: Color(0xFF1E3A8A)),
+              title: const Text('فتح داخل التطبيق (سريع)', style: TextStyle(fontFamily: 'Cairo')),
+              subtitle: const Text('عرض الموقع مباشرة هنا', style: TextStyle(fontSize: 12)),
+              onTap: () {
+                Navigator.pop(context);
+                _openInWebView(context, url, title);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.open_in_browser, color: Colors.orange),
+              title: const Text('فتح في متصفح خارجي (Chrome)', style: TextStyle(fontFamily: 'Cairo')),
+              subtitle: const Text('للحصول على أفضل توافقية وأمان', style: TextStyle(fontSize: 12)),
+              onTap: () {
+                Navigator.pop(context);
+                _openExternally(url);
+              },
+            ),
+          ],
         ),
-      );
-      return;
-    }
+      ),
+    );
+  }
 
-    try {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => WebViewScreen(
-            url: url,
-            title: title,
-          ),
+  void _openInWebView(BuildContext context, String url, String title) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => WebViewScreen(
+          url: url,
+          title: title,
         ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ أثناء فتح الرابط: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ),
+    );
+  }
+
+  Future<void> _openExternally(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -101,7 +134,8 @@ class ElectronicServicesScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('الخدمات الإلكترونية والروابط'),
-        backgroundColor: const Color(0xFF1E3A8A), // Dark blue
+        backgroundColor: const Color(0xFF1E3A8A),
+        foregroundColor: Colors.white,
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -109,8 +143,8 @@ class ElectronicServicesScreen extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF1E3A8A), // Dark blue
-              Color(0xFF1E40AF), // Slightly lighter blue
+              Color(0xFF1E3A8A),
+              Color(0xFF1E40AF),
             ],
           ),
         ),
@@ -119,27 +153,22 @@ class ElectronicServicesScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // الخدمات الإلكترونية
               _buildSection(
+                context: context,
                 title: 'الخدمات الالكترونية',
                 items: _electronicServices,
-                onItemTap: (url, title) => _openURL(url, title, context),
               ),
               const SizedBox(height: 32),
-              
-              // روابط تهمك
               _buildSection(
+                context: context,
                 title: 'روابط تهمك',
                 items: _importantLinks,
-                onItemTap: (url, title) => _openURL(url, title, context),
               ),
               const SizedBox(height: 32),
-              
-              // روابط إضافية
               _buildSection(
+                context: context,
                 title: 'روابط إضافية',
                 items: _additionalLinks,
-                onItemTap: (url, title) => _openURL(url, title, context),
               ),
             ],
           ),
@@ -149,22 +178,18 @@ class ElectronicServicesScreen extends StatelessWidget {
   }
 
   Widget _buildSection({
+    required BuildContext context,
     required String title,
     required List<Map<String, String>> items,
-    required Function(String, String) onItemTap,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // العنوان
         Container(
           padding: const EdgeInsets.only(bottom: 8),
           decoration: const BoxDecoration(
             border: Border(
-              bottom: BorderSide(
-                color: Color(0xFF60A5FA), // Light blue
-                width: 2,
-              ),
+              bottom: BorderSide(color: Color(0xFF60A5FA), width: 2),
             ),
           ),
           child: Text(
@@ -178,12 +203,10 @@ class ElectronicServicesScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        
-        // قائمة العناصر
         ...items.map((item) => _buildServiceItem(
           title: item['title']!,
           url: item['url']!,
-          onTap: () => onItemTap(item['url']!, item['title']!),
+          onTap: () => _handleLinkTap(context, item['url']!, item['title']!),
         )),
       ],
     );
@@ -194,55 +217,36 @@ class ElectronicServicesScreen extends StatelessWidget {
     required String url,
     required VoidCallback onTap,
   }) {
-    final bool hasUrl = url.isNotEmpty;
-    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.2),
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: hasUrl ? onTap : null,
-          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // السهم
-                Icon(
-                  Icons.arrow_back_ios,
-                  color: hasUrl ? const Color(0xFF60A5FA) : Colors.grey,
-                  size: 18,
-                ),
+                const Icon(Icons.language, color: Color(0xFF60A5FA)),
                 const SizedBox(width: 12),
-                
-                // النص
                 Expanded(
                   child: Text(
                     title,
-                    style: TextStyle(
-                      color: hasUrl ? Colors.white : Colors.grey[400],
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w500,
                       fontFamily: 'Cairo',
                     ),
                   ),
                 ),
-                
-                // أيقونة إذا كان هناك رابط
-                if (hasUrl)
-                  const Icon(
-                    Icons.launch,
-                    color: Color(0xFF60A5FA),
-                    size: 20,
-                  ),
+                const Icon(Icons.more_vert, color: Colors.white70),
               ],
             ),
           ),

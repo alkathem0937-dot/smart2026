@@ -2,11 +2,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
 import 'providers/lawsuit_provider.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'providers/settings_provider.dart';
+import 'providers/notification_provider.dart';
 import 'screens/register_screen.dart';
 import 'screens/legal_library_screen.dart';
 import 'screens/smart_assistant_screen.dart';
@@ -38,128 +42,70 @@ import 'screens/inheritance_calculation_screen.dart';
 import 'screens/area_calculation_screen.dart';
 import 'screens/notary_accounting_screen.dart';
 import 'screens/contracts_agencies_screen.dart';
-import 'providers/settings_provider.dart';
-import 'providers/notification_provider.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/electronic_services_screen.dart';
 
 void main() {
-  // Handle Flutter framework errors
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    if (kDebugMode) {
-      print('❌ [Flutter Error] ${details.exception}');
-      print('📋 [Flutter Error] Stack: ${details.stack}');
-    }
-  };
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    final prefs = await SharedPreferences.getInstance();
+    final bool showOnboarding = prefs.getBool('onboarding_completed') != true;
 
-  // Handle async errors
-  runZonedGuarded(() {
-    runApp(const MyApp());
+    runApp(MyApp(showOnboarding: showOnboarding));
   }, (error, stack) {
-    if (kDebugMode) {
-      print('❌ [Zone Error] $error');
-      print('📋 [Zone Error] Stack: $stack');
-    }
+    if (kDebugMode) debugPrint('❌ [Zone Error] $error');
   });
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool showOnboarding;
+  const MyApp({super.key, required this.showOnboarding});
 
   @override
   Widget build(BuildContext context) {
-    // Create shared ApiService instance
     final apiService = ApiService();
     
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) {
-            final authProvider = AuthProvider(apiService: apiService);
-            // Initialize asynchronously without blocking
-            authProvider.initialize().catchError((error) {
-              if (kDebugMode) {
-                print('⚠️ [Auth] Error during initialization: $error');
-              }
-            });
-            return authProvider;
-          },
-        ),
-        ChangeNotifierProvider(
-          create: (_) => LawsuitProvider(apiService: apiService),
-        ),
-        ChangeNotifierProvider(
-          create: (_) {
-            final settingsProvider = SettingsProvider();
-            settingsProvider.initialize();
-            return settingsProvider;
-          },
-        ),
+        ChangeNotifierProvider(create: (_) => AuthProvider(apiService: apiService)..initialize()),
+        ChangeNotifierProvider(create: (_) => LawsuitProvider(apiService: apiService)),
+        ChangeNotifierProvider(create: (_) => SettingsProvider()..initialize()),
         ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
           create: (_) => NotificationProvider(apiService),
-          update: (_, authProvider, previous) {
-            return NotificationProvider(apiService);
-          },
+          update: (_, auth, prev) => NotificationProvider(apiService),
         ),
       ],
       child: Consumer<SettingsProvider>(
-        builder: (context, settingsProvider, child) {
+        builder: (context, settings, _) {
           return MaterialApp(
-            title: 'SmartJudi - منصة قضائية',
+            title: 'SmartJudi',
             debugShowCheckedModeBanner: false,
             theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
-                brightness: Brightness.light,
-              ),
               useMaterial3: true,
-              fontFamily: 'Cairo', // Arabic font (you may need to add it)
-            ),
-            darkTheme: ThemeData(
+              fontFamily: 'Cairo', // تأكد من وجود الخط في pubspec.yaml
               colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
-                brightness: Brightness.dark,
+                seedColor: const Color(0xFFD4AF37), // ذهبي
+                primary: const Color(0xFFD4AF37),
+                secondary: const Color(0xFFB8860B),
+                surface: const Color(0xFFFDFBF7), // بيج فاتح جداً كخلفية
               ),
-              useMaterial3: true,
-              fontFamily: 'Cairo',
+              scaffoldBackgroundColor: const Color(0xFFFDFBF7),
+              elevatedButtonTheme: ElevatedButtonThemeData(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD4AF37),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 55),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
+                ),
+              ),
             ),
-            themeMode: settingsProvider.darkModeEnabled 
-                ? ThemeMode.dark 
-                : ThemeMode.light,
-            home: const AuthWrapper(),
+            home: showOnboarding ? const OnboardingScreen() : const AuthWrapper(),
             routes: {
+              '/login': (context) => const LoginScreen(),
               '/register': (context) => const RegisterScreen(),
-              '/legal-library': (context) => const LegalLibraryScreen(),
-              '/smart-assistant': (context) => const SmartAssistantScreen(),
-              '/training': (context) => const TrainingScreen(),
-              '/inquiries': (context) => const InquiriesScreen(),
-              '/contact-us': (context) => const ContactUsScreen(),
-              '/about-us': (context) => const AboutUsScreen(),
-              '/blog': (context) => const BlogScreen(),
-              '/laws': (context) => const LawsScreen(),
-              '/services': (context) => const ServicesScreen(),
-              '/complaint': (context) => const ComplaintScreen(),
-              '/daily-sessions': (context) => const DailySessionsScreen(),
-              '/calendar': (context) => const CalendarScreen(),
-              '/electronic-lawsuit': (context) => const ElectronicLawsuitScreen(),
-              '/supreme-court': (context) => const SupremeCourtScreen(),
-              '/faq': (context) => const FAQScreen(),
-              '/subscribe': (context) => const SubscribeScreen(),
-              '/payment-order': (context) => const PaymentOrderScreen(),
-              '/appeal': (context) => const AppealScreen(),
-              '/legal-database': (context) => const LegalDatabaseScreen(),
-              '/ai-case-analysis': (context) => const AICaseAnalysisScreen(),
-              '/case-management': (context) => const CaseManagementScreen(),
-              '/case-accounting': (context) => const CaseAccountingScreen(),
-              '/legal-forms': (context) => const LegalFormsScreen(),
-              '/remote-consultations': (context) => const RemoteConsultationsScreen(),
-              '/procedures-guide': (context) => const ProceduresGuideScreen(),
-              '/inheritance-calculation': (context) => const InheritanceCalculationScreen(),
-              '/area-calculation': (context) => const AreaCalculationScreen(),
-              '/notary-accounting': (context) => const NotaryAccountingScreen(),
-              '/contracts-agencies': (context) => const ContractsAgenciesScreen(),
-              '/notifications': (context) => const NotificationsScreen(),
+              '/home': (context) => const HomeScreen(),
               '/electronic-services': (context) => const ElectronicServicesScreen(),
             },
           );
@@ -169,29 +115,14 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Auth Wrapper - Shows login or home based on auth state
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
-      builder: (context, authProvider, child) {
-        // Show loading while checking auth state
-        if (authProvider.isLoading) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
-
-        // Show login if not authenticated, home if authenticated
-        if (authProvider.isAuthenticated) {
-          return const HomeScreen();
-        } else {
-          return const LoginScreen();
-        }
+      builder: (context, auth, _) {
+        if (auth.isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        return auth.isAuthenticated ? const HomeScreen() : const LoginScreen();
       },
     );
   }

@@ -4,7 +4,7 @@ class ApiConfig {
   // For Android Emulator: use 10.0.2.2 instead of localhost
   // For iOS Simulator: use localhost
   // For physical device: use your computer's IP address
-  static const String baseUrl = 'http://192.168.0.157:8000'; // Your current IP
+  static const String baseUrl = 'http://192.168.0.147:8000'; // Your current IP
   // Alternative URLs (uncomment the one you need):
   // static const String baseUrl = 'http://localhost:8000'; // iOS Simulator
   // static const String baseUrl = 'http://127.0.0.1:8000'; // iOS Simulator (alternative)
