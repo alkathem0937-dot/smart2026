@@ -4,11 +4,13 @@ class ApiConfig {
   // For Android Emulator: use 10.0.2.2 instead of localhost
   // For iOS Simulator: use localhost
   // For physical device: use your computer's IP address
-  static const String baseUrl = 'http://192.168.0.147:8000'; // Your current IP
-  // Alternative URLs (uncomment the one you need):
-  // static const String baseUrl = 'http://localhost:8000'; // iOS Simulator
-  // static const String baseUrl = 'http://127.0.0.1:8000'; // iOS Simulator (alternative)
-  // static const String baseUrl = 'http://192.168.1.100:8000'; // Physical device (replace with your computer's IP)
+  // Production URL (Render)
+  static const String baseUrl = 'https://smartjudi.onrender.com';
+  
+  // Development URLs (uncomment to use):
+  // static const String baseUrl = 'http://192.168.0.147:8000'; // Local Network
+  // static const String baseUrl = 'http://10.0.2.2:8000'; // Android Emulator
+  // static const String baseUrl = 'http://127.0.0.1:8000'; // iOS Simulator
   
   // API endpoints
   static const String loginEndpoint = '/api/token/';
