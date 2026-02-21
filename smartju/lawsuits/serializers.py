@@ -36,14 +36,21 @@ class FinancialClaimSerializer(serializers.ModelSerializer):
 
 class LawsuitSerializer(serializers.ModelSerializer):
     """
-    Serializer for Lawsuit model
+    Serializer for Lawsuit model - with archive fields
     """
     created_by = UserSerializer(read_only=True)
+    archived_by = UserSerializer(read_only=True)
     case_type_display = serializers.CharField(source='get_case_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     case_status_display = serializers.CharField(source='get_case_status_display', read_only=True)
+    archive_status_display = serializers.CharField(source='get_archive_status_display', read_only=True)
     court_detail = CourtSerializer(source='court_fk', read_only=True)
     financial_claims = FinancialClaimSerializer(many=True, read_only=True)
+    child_lawsuits_count = serializers.SerializerMethodField()
+    plaintiffs_count = serializers.SerializerMethodField()
+    defendants_count = serializers.SerializerMethodField()
+    attachments_count = serializers.SerializerMethodField()
+    hearings_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Lawsuit
@@ -55,10 +62,34 @@ class LawsuitSerializer(serializers.ModelSerializer):
             'court_fk', 'court_detail', 'court', 
             'subject', 'description', 'facts', 'legal_basis', 'legal_reasons', 'reasons', 
             'requests', 'status', 'status_display', 'notes',
+            # Archive fields
+            'archive_status', 'archive_status_display',
+            'archive_date', 'archive_reason', 'archived_by',
+            'is_deleted', 'deleted_at',
+            'parent_lawsuit',
+            # Counts
+            'child_lawsuits_count', 'plaintiffs_count', 'defendants_count',
+            'attachments_count', 'hearings_count',
+            # Timestamps
             'created_by', 'created_at', 'updated_at',
             'financial_claims'
         )
-        read_only_fields = ('id', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'archive_date', 'archived_by', 'is_deleted', 'deleted_at')
+    
+    def get_child_lawsuits_count(self, obj):
+        return obj.child_lawsuits.count() if hasattr(obj, 'child_lawsuits') else 0
+    
+    def get_plaintiffs_count(self, obj):
+        return obj.plaintiffs.count() if hasattr(obj, 'plaintiffs') else 0
+    
+    def get_defendants_count(self, obj):
+        return obj.defendants.count() if hasattr(obj, 'defendants') else 0
+    
+    def get_attachments_count(self, obj):
+        return obj.attachments.count() if hasattr(obj, 'attachments') else 0
+    
+    def get_hearings_count(self, obj):
+        return obj.hearings.count() if hasattr(obj, 'hearings') else 0
 
 
 class LawsuitCreateSerializer(serializers.ModelSerializer):
@@ -72,7 +103,7 @@ class LawsuitCreateSerializer(serializers.ModelSerializer):
             'case_type', 'case_status', 'governorate',
             'court_fk', 'court', 'subject', 'description', 
             'facts', 'legal_basis', 'legal_reasons', 'reasons', 'requests', 
-            'status', 'notes'
+            'status', 'notes', 'parent_lawsuit'
         )
 
 
@@ -87,5 +118,5 @@ class LawsuitUpdateSerializer(serializers.ModelSerializer):
             'case_type', 'case_status', 'governorate',
             'court_fk', 'court', 'subject', 'description', 
             'facts', 'legal_basis', 'legal_reasons', 'reasons', 'requests', 
-            'status', 'notes'
+            'status', 'notes', 'archive_status', 'parent_lawsuit'
         )

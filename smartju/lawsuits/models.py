@@ -266,6 +266,69 @@ class Lawsuit(models.Model):
         verbose_name='منشئ الدعوى'
     )
     
+    # ========== Archive Lifecycle Fields ==========
+    
+    # Archive status
+    ARCHIVE_ACTIVE = 'active'
+    ARCHIVE_SEMI_ACTIVE = 'semi_active'
+    ARCHIVE_ARCHIVED = 'archived'
+    
+    ARCHIVE_STATUS_CHOICES = [
+        (ARCHIVE_ACTIVE, 'نشط'),
+        (ARCHIVE_SEMI_ACTIVE, 'شبه نشط'),
+        (ARCHIVE_ARCHIVED, 'محفوظ'),
+    ]
+    
+    archive_status = models.CharField(
+        max_length=20,
+        choices=ARCHIVE_STATUS_CHOICES,
+        default=ARCHIVE_ACTIVE,
+        verbose_name='حالة الأرشفة'
+    )
+    
+    archive_date = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='تاريخ الأرشفة'
+    )
+    
+    archive_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='سبب الأرشفة'
+    )
+    
+    archived_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='archived_lawsuits',
+        verbose_name='أرشف بواسطة'
+    )
+    
+    # Soft delete
+    is_deleted = models.BooleanField(
+        default=False,
+        verbose_name='محذوف'
+    )
+    
+    deleted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='تاريخ الحذف'
+    )
+    
+    # Related lawsuit (for appeals/challenges linking)
+    parent_lawsuit = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='child_lawsuits',
+        verbose_name='الدعوى الأصلية'
+    )
+    
     # Timestamps
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -290,6 +353,9 @@ class Lawsuit(models.Model):
             models.Index(fields=['filing_date']),
             models.Index(fields=['court_fk']),
             models.Index(fields=['created_by']),
+            models.Index(fields=['archive_status']),
+            models.Index(fields=['is_deleted']),
+            models.Index(fields=['parent_lawsuit']),
         ]
     
     def __str__(self):

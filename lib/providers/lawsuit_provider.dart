@@ -2,12 +2,13 @@ import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
 import '../models/lawsuit_model.dart';
 
-/// Lawsuit Provider for managing lawsuits state
+/// Lawsuit Provider for managing lawsuits state - with archive support
 class LawsuitProvider with ChangeNotifier {
   final ApiService _apiService;
   
   LawsuitProvider({ApiService? apiService}) 
       : _apiService = apiService ?? ApiService();
+
   List<LawsuitModel> _lawsuits = [];
   LawsuitModel? _selectedLawsuit;
   bool _isLoading = false;
@@ -16,14 +17,128 @@ class LawsuitProvider with ChangeNotifier {
   int _currentPage = 1;
   bool _hasMore = true;
 
+  // Archive stats
+  Map<String, dynamic>? _archiveStats;
+
+  // Current filters
+  String? _searchQuery;
+  String? _caseTypeFilter;
+  String? _caseStatusFilter;
+  String? _archiveStatusFilter;
+  String? _governorateFilter;
+  String? _filingDateFrom;
+  String? _filingDateTo;
+  String? _ordering;
+
   List<LawsuitModel> get lawsuits => _lawsuits;
   LawsuitModel? get selectedLawsuit => _selectedLawsuit;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   int get totalCount => _totalCount;
   bool get hasMore => _hasMore;
+  Map<String, dynamic>? get archiveStats => _archiveStats;
 
-  // Load lawsuits
+  // Filter getters
+  String? get searchQuery => _searchQuery;
+  String? get caseTypeFilter => _caseTypeFilter;
+  String? get caseStatusFilter => _caseStatusFilter;
+  String? get archiveStatusFilter => _archiveStatusFilter;
+  String? get governorateFilter => _governorateFilter;
+  String? get ordering => _ordering;
+
+  bool get hasActiveFilters =>
+      (_searchQuery != null && _searchQuery!.isNotEmpty) ||
+      _caseTypeFilter != null ||
+      _caseStatusFilter != null ||
+      _archiveStatusFilter != null ||
+      _governorateFilter != null ||
+      _filingDateFrom != null ||
+      _filingDateTo != null;
+
+  // Set filters
+  void setSearchQuery(String? query) {
+    _searchQuery = query;
+    notifyListeners();
+  }
+
+  void setCaseTypeFilter(String? type) {
+    _caseTypeFilter = type;
+    notifyListeners();
+  }
+
+  void setCaseStatusFilter(String? status) {
+    _caseStatusFilter = status;
+    notifyListeners();
+  }
+
+  void setArchiveStatusFilter(String? status) {
+    _archiveStatusFilter = status;
+    notifyListeners();
+  }
+
+  void setGovernorateFilter(String? governorate) {
+    _governorateFilter = governorate;
+    notifyListeners();
+  }
+
+  void setDateRange(String? from, String? to) {
+    _filingDateFrom = from;
+    _filingDateTo = to;
+    notifyListeners();
+  }
+
+  void setOrdering(String? ordering) {
+    _ordering = ordering;
+    notifyListeners();
+  }
+
+  void clearFilters() {
+    _searchQuery = null;
+    _caseTypeFilter = null;
+    _caseStatusFilter = null;
+    _archiveStatusFilter = null;
+    _governorateFilter = null;
+    _filingDateFrom = null;
+    _filingDateTo = null;
+    _ordering = null;
+    notifyListeners();
+  }
+
+  /// Build query params from current filters
+  Map<String, String> _buildQueryParams() {
+    final params = <String, String>{
+      'page': _currentPage.toString(),
+    };
+
+    if (_searchQuery != null && _searchQuery!.isNotEmpty) {
+      params['search'] = _searchQuery!;
+    }
+    if (_caseTypeFilter != null) {
+      params['case_type'] = _caseTypeFilter!;
+    }
+    if (_caseStatusFilter != null) {
+      params['case_status'] = _caseStatusFilter!;
+    }
+    if (_archiveStatusFilter != null) {
+      params['archive_status'] = _archiveStatusFilter!;
+    }
+    if (_governorateFilter != null) {
+      params['governorate'] = _governorateFilter!;
+    }
+    if (_filingDateFrom != null) {
+      params['filing_date_from'] = _filingDateFrom!;
+    }
+    if (_filingDateTo != null) {
+      params['filing_date_to'] = _filingDateTo!;
+    }
+    if (_ordering != null) {
+      params['ordering'] = _ordering!;
+    }
+
+    return params;
+  }
+
+  // Load lawsuits with filters
   Future<void> loadLawsuits({bool refresh = false, Map<String, String>? filters}) async {
     if (refresh) {
       _currentPage = 1;
@@ -38,35 +153,28 @@ class LawsuitProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final queryParams = <String, String>{
-        'page': _currentPage.toString(),
-        ...?filters,
-      };
+      final queryParams = _buildQueryParams();
+      if (filters != null) {
+        queryParams.addAll(filters);
+      }
 
       final response = await _apiService.getLawsuits(queryParams: queryParams);
       
-      // Handle different response formats from Django
       List<dynamic> resultsList;
       int? totalCount;
       bool hasMore;
       
-      // Check if response has 'data' wrapper (from StandardResultsSetPagination)
       if (response.containsKey('data')) {
         final data = response['data'];
-        // If data is a Map with 'results', it's the paginated format
         if (data is Map && data.containsKey('results')) {
           resultsList = data['results'] as List? ?? [];
           totalCount = data['count'] as int? ?? 0;
           hasMore = data['next'] != null;
-        } 
-        // If data is a List, it's a direct list
-        else if (data is List) {
+        } else if (data is List) {
           resultsList = data;
           totalCount = data.length;
           hasMore = false;
-        } 
-        // Otherwise, try to get from pagination object
-        else {
+        } else {
           final pagination = response['pagination'] as Map?;
           if (pagination != null) {
             totalCount = pagination['count'] as int? ?? 0;
@@ -77,15 +185,11 @@ class LawsuitProvider with ChangeNotifier {
           }
           resultsList = [];
         }
-      } 
-      // Standard Django REST Framework pagination format
-      else if (response.containsKey('results')) {
+      } else if (response.containsKey('results')) {
         resultsList = (response['results'] as List?) ?? [];
         totalCount = response['count'] as int? ?? 0;
         hasMore = response['next'] != null;
-      } 
-      // Fallback: empty list
-      else {
+      } else {
         resultsList = [];
         totalCount = 0;
         hasMore = false;
@@ -111,6 +215,16 @@ class LawsuitProvider with ChangeNotifier {
       _errorMessage = e.toString();
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  // Load archive stats
+  Future<void> loadArchiveStats() async {
+    try {
+      _archiveStats = await _apiService.getArchiveStats();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading archive stats: $e');
     }
   }
 
@@ -177,7 +291,7 @@ class LawsuitProvider with ChangeNotifier {
     }
   }
 
-  // Delete lawsuit
+  // Delete lawsuit (soft delete)
   Future<bool> deleteLawsuit(int id) async {
     _isLoading = true;
     _errorMessage = null;
@@ -200,10 +314,37 @@ class LawsuitProvider with ChangeNotifier {
     }
   }
 
+  // Archive lawsuit
+  Future<bool> archiveLawsuit(int id, {String? reason}) async {
+    try {
+      await _apiService.archiveLawsuit(id, reason: reason);
+      await loadLawsuits(refresh: true);
+      await loadArchiveStats();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Unarchive lawsuit
+  Future<bool> unarchiveLawsuit(int id) async {
+    try {
+      await _apiService.unarchiveLawsuit(id);
+      await loadLawsuits(refresh: true);
+      await loadArchiveStats();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   // Clear selected lawsuit
   void clearSelectedLawsuit() {
     _selectedLawsuit = null;
     notifyListeners();
   }
 }
-

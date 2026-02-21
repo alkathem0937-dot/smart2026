@@ -1,18 +1,18 @@
-/// Lawsuit Model
+/// Lawsuit Model - with archive lifecycle support
 class LawsuitModel {
   final int? id;
   final String caseNumber;
   final String caseType;
   final String status;
-  final String? caseStatus; // New field
-  final String? subject; // New field
+  final String? caseStatus;
+  final String? subject;
   final String? description;
-  final String? facts; // New field
-  final String? legalBasis; // New field
-  final String? legalReasons; // New field
-  final String? requests; // New field
-  final String? governorate; // New field
-  final String? notes; // New field
+  final String? facts;
+  final String? legalBasis;
+  final String? legalReasons;
+  final String? requests;
+  final String? governorate;
+  final String? notes;
   final DateTime? filingDate;
   final int? courtId;
   final String? courtName;
@@ -20,6 +20,21 @@ class LawsuitModel {
   final String? judgeName;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  // Archive lifecycle fields
+  final String archiveStatus;
+  final DateTime? archiveDate;
+  final String? archiveReason;
+  final bool isDeleted;
+  final DateTime? deletedAt;
+  final int? parentLawsuitId;
+
+  // Counts
+  final int childLawsuitsCount;
+  final int plaintiffsCount;
+  final int defendantsCount;
+  final int attachmentsCount;
+  final int hearingsCount;
 
   LawsuitModel({
     this.id,
@@ -42,6 +57,17 @@ class LawsuitModel {
     this.judgeName,
     this.createdAt,
     this.updatedAt,
+    this.archiveStatus = 'active',
+    this.archiveDate,
+    this.archiveReason,
+    this.isDeleted = false,
+    this.deletedAt,
+    this.parentLawsuitId,
+    this.childLawsuitsCount = 0,
+    this.plaintiffsCount = 0,
+    this.defendantsCount = 0,
+    this.attachmentsCount = 0,
+    this.hearingsCount = 0,
   });
 
   factory LawsuitModel.fromJson(Map<String, dynamic> json) {
@@ -70,6 +96,19 @@ class LawsuitModel {
       judgeName: json['judge_name'],
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      // Archive fields
+      archiveStatus: json['archive_status'] ?? 'active',
+      archiveDate: json['archive_date'] != null ? DateTime.parse(json['archive_date']) : null,
+      archiveReason: json['archive_reason'],
+      isDeleted: json['is_deleted'] ?? false,
+      deletedAt: json['deleted_at'] != null ? DateTime.parse(json['deleted_at']) : null,
+      parentLawsuitId: json['parent_lawsuit'],
+      // Counts
+      childLawsuitsCount: json['child_lawsuits_count'] ?? 0,
+      plaintiffsCount: json['plaintiffs_count'] ?? 0,
+      defendantsCount: json['defendants_count'] ?? 0,
+      attachmentsCount: json['attachments_count'] ?? 0,
+      hearingsCount: json['hearings_count'] ?? 0,
     );
   }
 
@@ -91,6 +130,7 @@ class LawsuitModel {
       if (filingDate != null) 'filing_date': filingDate!.toIso8601String().split('T')[0],
       if (courtId != null) 'court_fk': courtId,
       if (judgeId != null) 'judge': judgeId,
+      if (parentLawsuitId != null) 'parent_lawsuit': parentLawsuitId,
     };
   }
 
@@ -137,5 +177,33 @@ class LawsuitModel {
         return caseType;
     }
   }
-}
 
+  String get archiveStatusDisplay {
+    switch (archiveStatus) {
+      case 'active':
+        return 'نشط';
+      case 'semi_active':
+        return 'شبه نشط';
+      case 'archived':
+        return 'محفوظ';
+      default:
+        return archiveStatus;
+    }
+  }
+
+  String get caseStatusDisplay {
+    final s = caseStatus ?? '';
+    switch (s) {
+      case 'جديد':
+        return 'جديد';
+      case 'قيد_النظر':
+        return 'قيد النظر';
+      case 'مكتمل':
+        return 'مكتمل';
+      case 'مغلق':
+        return 'مغلق';
+      default:
+        return s.isNotEmpty ? s : statusDisplay;
+    }
+  }
+}

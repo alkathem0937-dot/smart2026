@@ -363,6 +363,38 @@ class ApiService {
     await _makeRequest('DELETE', '${ApiConfig.lawsuitsEndpoint}$id/');
   }
 
+  // ========== Archive API ==========
+
+  /// Get archive statistics
+  Future<Map<String, dynamic>> getArchiveStats() async {
+    return await _makeRequest('GET', '${ApiConfig.lawsuitsEndpoint}stats/');
+  }
+
+  /// Archive a lawsuit
+  Future<Map<String, dynamic>> archiveLawsuit(int id, {String? reason}) async {
+    return await _makeRequest(
+      'POST',
+      '${ApiConfig.lawsuitsEndpoint}$id/archive/',
+      body: {if (reason != null) 'reason': reason},
+    );
+  }
+
+  /// Unarchive a lawsuit
+  Future<Map<String, dynamic>> unarchiveLawsuit(int id) async {
+    return await _makeRequest(
+      'POST',
+      '${ApiConfig.lawsuitsEndpoint}$id/unarchive/',
+    );
+  }
+
+  /// Restore a soft-deleted lawsuit
+  Future<Map<String, dynamic>> restoreLawsuit(int id) async {
+    return await _makeRequest(
+      'POST',
+      '${ApiConfig.lawsuitsEndpoint}$id/restore/',
+    );
+  }
+
   // Legal Templates
   Future<Map<String, dynamic>> getLegalTemplates({String? caseType}) async {
     String endpoint = ApiConfig.legalTemplatesEndpoint;

@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import 'lawsuits_list_screen.dart';
 import 'lawsuit_detail_screen.dart';
+import 'archive_screen.dart';
 import 'inquiries_screen.dart';
 import 'settings_screen.dart';
 import 'payment_order_screen.dart';
@@ -109,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // 1 - Calendar / Daily Sessions
           const CalendarScreen(),
           // 2 - Files / Archives
-          const LawsuitsListScreen(),
+          const ArchiveScreen(),
           // 3 - Library / Books
           const LegalLibraryScreen(),
           // 4 - Layers / Services
@@ -793,8 +794,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             _buildDrawerItem(
-              icon: Icons.gavel,
-              label: 'الدعاوى',
+              icon: Icons.archive_outlined,
+              label: 'أرشيف القضايا',
               onTap: () {
                 Navigator.pop(context);
                 setState(() => _selectedIndex = 2);
