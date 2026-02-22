@@ -9,6 +9,7 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../services/api_service.dart';
+import 'lawsuit_detail_screen.dart';
 import 'dart:convert';
 
 /// Calendar Screen - التقويم الهجري والميلادي مع إدارة المهام
@@ -1123,37 +1124,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   
                   // Link to Archive (for hearing type)
                   if (selectedType == TaskType.hearing)
-                    FutureBuilder(
-                      future: _apiService.getLawsuits(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const CircularProgressIndicator();
-                        }
-                        
-                        final lawsuits = snapshot.data?['results'] as List? ?? [];
-                        
-                        return DropdownButtonFormField<int>(
-                          value: selectedLawsuitId,
-                          decoration: InputDecoration(
-                            labelText: 'ربط بقضية من الأرشيف',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          items: [
-                            const DropdownMenuItem<int>(
-                              value: null,
-                              child: Text('بدون ربط'),
-                            ),
-                            ...lawsuits.map((lawsuit) => DropdownMenuItem<int>(
-                              value: lawsuit['id'],
-                              child: Text(lawsuit['case_number'] ?? 'غير معروف'),
-                            )).toList(),
-                          ],
-                          onChanged: (value) {
-                            setModalState(() => selectedLawsuitId = value);
-                          },
-                        );
+                    _buildLawsuitLinkDropdown(
+                      selectedLawsuitId: selectedLawsuitId,
+                      onChanged: (value) {
+                        setModalState(() => selectedLawsuitId = value);
                       },
                     ),
                   
@@ -1466,37 +1440,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   
                   // Link to Archive (for hearing type)
                   if (selectedType == TaskType.hearing)
-                    FutureBuilder(
-                      future: _apiService.getLawsuits(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const CircularProgressIndicator();
-                        }
-                        
-                        final lawsuits = snapshot.data?['results'] as List? ?? [];
-                        
-                        return DropdownButtonFormField<int>(
-                          value: selectedLawsuitId,
-                          decoration: InputDecoration(
-                            labelText: 'ربط بقضية من الأرشيف',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          items: [
-                            const DropdownMenuItem<int>(
-                              value: null,
-                              child: Text('بدون ربط'),
-                            ),
-                            ...lawsuits.map((lawsuit) => DropdownMenuItem<int>(
-                              value: lawsuit['id'],
-                              child: Text(lawsuit['case_number'] ?? 'غير معروف'),
-                            )).toList(),
-                          ],
-                          onChanged: (value) {
-                            setModalState(() => selectedLawsuitId = value);
-                          },
-                        );
+                    _buildLawsuitLinkDropdown(
+                      selectedLawsuitId: selectedLawsuitId,
+                      onChanged: (value) {
+                        setModalState(() => selectedLawsuitId = value);
                       },
                     ),
                   
@@ -2085,8 +2032,91 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Widget _buildLawsuitLinkDropdown({
+    required int? selectedLawsuitId,
+    required ValueChanged<int?> onChanged,
+  }) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _apiService.getLawsuits(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Center(
+              child: SizedBox(
+                width: 24, height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              'خطأ في تحميل القضايا',
+              style: TextStyle(color: Colors.red[400], fontSize: 13),
+            ),
+          );
+        }
+
+        // Support both paginated and direct results
+        List lawsuits = [];
+        final data = snapshot.data;
+        if (data != null) {
+          if (data.containsKey('results')) {
+            lawsuits = data['results'] as List? ?? [];
+          } else if (data.containsKey('data')) {
+            final inner = data['data'];
+            if (inner is Map && inner.containsKey('results')) {
+              lawsuits = inner['results'] as List? ?? [];
+            } else if (inner is List) {
+              lawsuits = inner;
+            }
+          }
+        }
+
+        // Validate selected value exists in items
+        final validId = lawsuits.any((l) => l['id'] == selectedLawsuitId)
+            ? selectedLawsuitId
+            : null;
+
+        return DropdownButtonFormField<int>(
+          value: validId,
+          decoration: InputDecoration(
+            labelText: 'ربط بقضية من الأرشيف',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          items: [
+            const DropdownMenuItem<int>(
+              value: null,
+              child: Text('بدون ربط'),
+            ),
+            ...lawsuits.map((lawsuit) => DropdownMenuItem<int>(
+              value: lawsuit['id'] as int,
+              child: Text(
+                '${lawsuit['case_number'] ?? 'غير معروف'} - ${lawsuit['subject'] ?? ''}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            )),
+          ],
+          onChanged: onChanged,
+          isExpanded: true,
+        );
+      },
+    );
+  }
+
   void _navigateToCase(int lawsuitId) {
-    Navigator.pushNamed(context, '/lawsuit-detail', arguments: lawsuitId);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LawsuitDetailScreen(lawsuitId: lawsuitId),
+      ),
+    );
   }
 }
 

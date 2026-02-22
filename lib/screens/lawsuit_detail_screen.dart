@@ -103,11 +103,13 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   }
 
   Future<void> _loadParties() async {
-    if (widget.lawsuitId == null) return;
+    if (widget.lawsuitId == null || !mounted) return;
     
-    setState(() {
-      _isLoadingParties = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoadingParties = true;
+      });
+    }
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -119,24 +121,62 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         lawsuitId: widget.lawsuitId,
       );
 
-      setState(() {
-        _plaintiffs = (plaintiffsResponse['results'] as List? ?? [])
-            .map((json) => PlaintiffModel.fromJson(json))
+      developer.log('Plaintiffs response: $plaintiffsResponse', name: 'LawsuitDetailScreen');
+      developer.log('Defendants response: $defendantsResponse', name: 'LawsuitDetailScreen');
+
+      if (mounted) {
+        final plaintiffsList = (plaintiffsResponse['results'] as List? ?? [])
+            .map((json) {
+              try {
+                return PlaintiffModel.fromJson(json);
+              } catch (e) {
+                developer.log('Error parsing plaintiff: $e, json: $json', name: 'LawsuitDetailScreen');
+                return null;
+              }
+            })
+            .whereType<PlaintiffModel>()
             .toList();
-        _defendants = (defendantsResponse['results'] as List? ?? [])
-            .map((json) => DefendantModel.fromJson(json))
+        
+        final defendantsList = (defendantsResponse['results'] as List? ?? [])
+            .map((json) {
+              try {
+                return DefendantModel.fromJson(json);
+              } catch (e) {
+                developer.log('Error parsing defendant: $e, json: $json', name: 'LawsuitDetailScreen');
+                return null;
+              }
+            })
+            .whereType<DefendantModel>()
             .toList();
-      });
-    } catch (e) {
+
+        setState(() {
+          _plaintiffs = plaintiffsList;
+          _defendants = defendantsList;
+          _isLoadingParties = false;
+        });
+        
+        developer.log('Loaded ${_plaintiffs.length} plaintiffs and ${_defendants.length} defendants', name: 'LawsuitDetailScreen');
+      }
+    } catch (e, stackTrace) {
       developer.log('Error loading parties: $e', name: 'LawsuitDetailScreen');
-    } finally {
-      setState(() {
-        _isLoadingParties = false;
-      });
+      developer.log('Stack trace: $stackTrace', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        setState(() {
+          _isLoadingParties = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في تحميل الأطراف: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _loadTemplates(String caseType) async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoadingTemplates = true;
     });
@@ -145,22 +185,24 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final response = await authProvider.apiService.getLawsuitTemplates(caseType);
       
-      setState(() {
-        _templates = response;
-        _templateKeys = (response['templates'] as List)
-            .map((t) => t['section_key'] as String)
-            .toList();
-        
-        // Create controllers for each template
-        for (var template in response['templates']) {
-          final key = template['section_key'] as String;
-          if (!_legalTextControllers.containsKey(key)) {
-            _legalTextControllers[key] = TextEditingController(
-              text: template['default_text'] as String? ?? '',
-            );
+      if (mounted) {
+        setState(() {
+          _templates = response;
+          _templateKeys = (response['templates'] as List)
+              .map((t) => t['section_key'] as String)
+              .toList();
+          
+          // Create controllers for each template
+          for (var template in response['templates']) {
+            final key = template['section_key'] as String;
+            if (!_legalTextControllers.containsKey(key)) {
+              _legalTextControllers[key] = TextEditingController(
+                text: template['default_text'] as String? ?? '',
+              );
+            }
           }
-        }
-      });
+        });
+      }
     } catch (e) {
       developer.log('Error loading templates: $e', name: 'LawsuitDetailScreen');
       if (mounted) {
@@ -172,9 +214,11 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         );
       }
     } finally {
-      setState(() {
-        _isLoadingTemplates = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingTemplates = false;
+        });
+      }
     }
   }
 
@@ -513,8 +557,10 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         Card(
           color: Colors.green.shade50,
           child: ExpansionTile(
+            key: ValueKey('plaintiffs_${_plaintiffs.length}_${_isLoadingParties}'),
             leading: const Icon(Icons.person, color: Colors.green),
             title: Text('المدعون (${_plaintiffs.length})'),
+            initiallyExpanded: _plaintiffs.isNotEmpty,
             children: _isLoadingParties
                 ? [const Center(child: CircularProgressIndicator())]
                 : _plaintiffs.isEmpty
@@ -533,8 +579,10 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         Card(
           color: Colors.orange.shade50,
           child: ExpansionTile(
+            key: ValueKey('defendants_${_defendants.length}_${_isLoadingParties}'),
             leading: const Icon(Icons.person_outline, color: Colors.orange),
             title: Text('المدعى عليهم (${_defendants.length})'),
+            initiallyExpanded: _defendants.isNotEmpty,
             children: _isLoadingParties
                 ? [const Center(child: CircularProgressIndicator())]
                 : _defendants.isEmpty
@@ -598,32 +646,37 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     final attorneyPhoneController = TextEditingController(text: party?.attorneyPhone ?? '');
     String? selectedGender = party?.gender ?? 'male';
 
-    await showDialog(
+    bool? shouldSave = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(party == null 
-            ? (isPlaintiff ? 'إضافة مدعي' : 'إضافة مدعى عليه')
-            : (isPlaintiff ? 'تعديل مدعي' : 'تعديل مدعى عليه')),
-        content: SingleChildScrollView(
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'الاسم *'),
-                  validator: (v) => v?.isEmpty ?? true ? 'مطلوب' : null,
-                ),
-                DropdownButtonFormField<String>(
-                  value: selectedGender,
-                  decoration: const InputDecoration(labelText: 'الجنس *'),
-                  items: const [
-                    DropdownMenuItem(value: 'male', child: Text('ذكر')),
-                    DropdownMenuItem(value: 'female', child: Text('أنثى')),
-                  ],
-                  onChanged: (v) => selectedGender = v,
-                ),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(party == null 
+              ? (isPlaintiff ? 'إضافة مدعي' : 'إضافة مدعى عليه')
+              : (isPlaintiff ? 'تعديل مدعي' : 'تعديل مدعى عليه')),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'الاسم *'),
+                    validator: (v) => v?.isEmpty ?? true ? 'مطلوب' : null,
+                  ),
+                  DropdownButtonFormField<String>(
+                    value: selectedGender,
+                    decoration: const InputDecoration(labelText: 'الجنس *'),
+                    items: const [
+                      DropdownMenuItem(value: 'male', child: Text('ذكر')),
+                      DropdownMenuItem(value: 'female', child: Text('أنثى')),
+                    ],
+                    onChanged: (v) {
+                      setDialogState(() {
+                        selectedGender = v;
+                      });
+                    },
+                  ),
                 TextFormField(
                   controller: nationalityController,
                   decoration: const InputDecoration(labelText: 'الجنسية *'),
@@ -659,40 +712,62 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('إلغاء'),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               if (formKey.currentState!.validate()) {
-                await _saveParty(
-                  isPlaintiff: isPlaintiff,
-                  party: party,
-                  name: nameController.text,
-                  gender: selectedGender!,
-                  nationality: nationalityController.text,
-                  occupation: occupationController.text.isEmpty ? null : occupationController.text,
-                  address: addressController.text,
-                  phone: phoneController.text.isEmpty ? null : phoneController.text,
-                  attorneyName: attorneyNameController.text.isEmpty ? null : attorneyNameController.text,
-                  attorneyPhone: attorneyPhoneController.text.isEmpty ? null : attorneyPhoneController.text,
-                );
-                Navigator.pop(context);
+                Navigator.pop(dialogContext, true);
               }
             },
             child: Text(party == null ? 'إضافة' : 'حفظ'),
           ),
         ],
+        ),
       ),
     );
-
-    nameController.dispose();
-    nationalityController.dispose();
-    occupationController.dispose();
-    addressController.dispose();
-    phoneController.dispose();
-    attorneyNameController.dispose();
-    attorneyPhoneController.dispose();
+    
+    // Save party data before disposing controllers
+    final partyName = nameController.text;
+    final partyGender = selectedGender!;
+    final partyNationality = nationalityController.text;
+    final partyOccupation = occupationController.text.isEmpty ? null : occupationController.text;
+    final partyAddress = addressController.text;
+    final partyPhone = phoneController.text.isEmpty ? null : phoneController.text;
+    final partyAttorneyName = attorneyNameController.text.isEmpty ? null : attorneyNameController.text;
+    final partyAttorneyPhone = attorneyPhoneController.text.isEmpty ? null : attorneyPhoneController.text;
+    
+    // Dispose controllers after dialog is fully closed
+    // Use post-frame callback to ensure dialog widgets are completely disposed before disposing controllers
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Wait one more frame to ensure all dialog widgets are fully disposed
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameController.dispose();
+        nationalityController.dispose();
+        occupationController.dispose();
+        addressController.dispose();
+        phoneController.dispose();
+        attorneyNameController.dispose();
+        attorneyPhoneController.dispose();
+      });
+    });
+    
+    // Save party if dialog returned true and widget is still mounted
+    if (shouldSave == true && mounted) {
+      await _saveParty(
+        isPlaintiff: isPlaintiff,
+        party: party,
+        name: partyName,
+        gender: partyGender,
+        nationality: partyNationality,
+        occupation: partyOccupation,
+        address: partyAddress,
+        phone: partyPhone,
+        attorneyName: partyAttorneyName,
+        attorneyPhone: partyAttorneyPhone,
+      );
+    }
   }
 
   Future<void> _saveParty({
@@ -707,6 +782,8 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     String? attorneyName,
     String? attorneyPhone,
   }) async {
+    if (!mounted) return;
+    
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final lawsuitId = widget.lawsuitId!;
@@ -716,31 +793,102 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         'name': name,
         'gender': gender,
         'nationality': nationality,
-        if (occupation != null) 'occupation': occupation,
+        if (occupation != null && occupation.isNotEmpty) 'occupation': occupation,
         'address': address,
-        if (phone != null) 'phone': phone,
-        if (attorneyName != null) 'attorney_name': attorneyName,
-        if (attorneyPhone != null) 'attorney_phone': attorneyPhone,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        if (attorneyName != null && attorneyName.isNotEmpty) 'attorney_name': attorneyName,
+        if (attorneyPhone != null && attorneyPhone.isNotEmpty) 'attorney_phone': attorneyPhone,
       };
 
+      developer.log('Saving party: $partyData', name: 'LawsuitDetailScreen');
+
+      Map<String, dynamic>? responseData;
+      
       if (party == null) {
         // Create new party
         if (isPlaintiff) {
-          await authProvider.apiService.createPlaintiff(partyData);
+          final response = await authProvider.apiService.createPlaintiff(partyData);
+          developer.log('Create plaintiff response: $response', name: 'LawsuitDetailScreen');
+          responseData = response;
+          
+          // Add to local list immediately for better UX
+          if (mounted && responseData != null) {
+            try {
+              final newPlaintiff = PlaintiffModel.fromJson(responseData);
+              setState(() {
+                _plaintiffs.add(newPlaintiff);
+              });
+            } catch (e) {
+              developer.log('Error parsing new plaintiff: $e', name: 'LawsuitDetailScreen');
+            }
+          }
         } else {
-          await authProvider.apiService.createDefendant(partyData);
+          final response = await authProvider.apiService.createDefendant(partyData);
+          developer.log('Create defendant response: $response', name: 'LawsuitDetailScreen');
+          responseData = response;
+          
+          // Add to local list immediately for better UX
+          if (mounted && responseData != null) {
+            try {
+              final newDefendant = DefendantModel.fromJson(responseData);
+              setState(() {
+                _defendants.add(newDefendant);
+              });
+            } catch (e) {
+              developer.log('Error parsing new defendant: $e', name: 'LawsuitDetailScreen');
+            }
+          }
         }
       } else {
         // Update existing party
         if (isPlaintiff) {
-          await authProvider.apiService.updatePlaintiff(party.id!, partyData);
+          final response = await authProvider.apiService.updatePlaintiff(party.id!, partyData);
+          developer.log('Update plaintiff response: $response', name: 'LawsuitDetailScreen');
+          responseData = response;
+          
+          // Update local list immediately
+          if (mounted && responseData != null) {
+            try {
+              final updatedPlaintiff = PlaintiffModel.fromJson(responseData);
+              setState(() {
+                final index = _plaintiffs.indexWhere((p) => p.id == party.id);
+                if (index != -1) {
+                  _plaintiffs[index] = updatedPlaintiff;
+                }
+              });
+            } catch (e) {
+              developer.log('Error parsing updated plaintiff: $e', name: 'LawsuitDetailScreen');
+            }
+          }
         } else {
-          await authProvider.apiService.updateDefendant(party.id!, partyData);
+          final response = await authProvider.apiService.updateDefendant(party.id!, partyData);
+          developer.log('Update defendant response: $response', name: 'LawsuitDetailScreen');
+          responseData = response;
+          
+          // Update local list immediately
+          if (mounted && responseData != null) {
+            try {
+              final updatedDefendant = DefendantModel.fromJson(responseData);
+              setState(() {
+                final index = _defendants.indexWhere((d) => d.id == party.id);
+                if (index != -1) {
+                  _defendants[index] = updatedDefendant;
+                }
+              });
+            } catch (e) {
+              developer.log('Error parsing updated defendant: $e', name: 'LawsuitDetailScreen');
+            }
+          }
         }
       }
 
-      // Reload parties
-      await _loadParties();
+      // Reload parties from server to ensure sync (in background)
+      if (mounted) {
+        // Don't await - let it run in background while UI updates
+        _loadParties().catchError((e) {
+          developer.log('Error reloading parties: $e', name: 'LawsuitDetailScreen');
+        });
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -749,14 +897,20 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                 ? (isPlaintiff ? 'تم إضافة المدعي بنجاح' : 'تم إضافة المدعى عليه بنجاح')
                 : 'تم التحديث بنجاح'),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       developer.log('Error saving party: $e', name: 'LawsuitDetailScreen');
+      developer.log('Stack trace: $stackTrace', name: 'LawsuitDetailScreen');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ: ${e.toString()}'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('خطأ في حفظ الطرف: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -793,8 +947,10 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         await authProvider.apiService.deleteDefendant(party.id!);
       }
 
-      // Reload parties
-      await _loadParties();
+      // Reload parties only if still mounted
+      if (mounted) {
+        await _loadParties();
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

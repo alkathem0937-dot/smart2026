@@ -18,7 +18,6 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   late TabController _tabController;
-  bool _showFilters = false;
   bool _isGridView = false;
 
   // Filter selections
@@ -127,7 +126,32 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
     provider.setArchiveStatusFilter(_selectedArchiveStatus);
     provider.setOrdering(_selectedOrdering);
     provider.loadLawsuits(refresh: true);
-    setState(() => _showFilters = false);
+  }
+
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _FilterBottomSheet(
+        selectedCaseType: _selectedCaseType,
+        selectedCaseStatus: _selectedCaseStatus,
+        selectedArchiveStatus: _selectedArchiveStatus,
+        selectedOrdering: _selectedOrdering,
+        onApply: (caseType, caseStatus, archiveStatus, ordering) {
+          setState(() {
+            _selectedCaseType = caseType;
+            _selectedCaseStatus = caseStatus;
+            _selectedArchiveStatus = archiveStatus;
+            _selectedOrdering = ordering;
+          });
+          _applyFilters();
+        },
+        onClear: () {
+          _clearFilters();
+        },
+      ),
+    );
   }
 
   void _clearFilters() {
@@ -145,22 +169,32 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final isKeyboardVisible = keyboardHeight > 0;
+    
     return Scaffold(
-      body: Column(
-        children: [
-          // Header with search
-          _buildHeader(),
-          // Stats bar
-          _buildStatsBar(),
-          // Tabs
-          _buildTabs(),
-          // Filter chips
-          _buildActiveFilterChips(),
-          // Filter panel (expandable)
-          if (_showFilters) _buildFilterPanel(),
-          // Results list
-          Expanded(child: _buildResultsList()),
-        ],
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Column(
+              children: [
+                // Header with search (reduced padding when keyboard is visible)
+                _buildHeader(isKeyboardVisible: isKeyboardVisible),
+                // Stats bar (hidden when keyboard is visible to save space)
+                if (!isKeyboardVisible) _buildStatsBar(),
+                // Tabs (hidden when keyboard is visible to save space)
+                if (!isKeyboardVisible) _buildTabs(),
+                // Filter chips (hidden when keyboard is visible to save space)
+                if (!isKeyboardVisible) _buildActiveFilterChips(),
+                // Results list (takes remaining space, scrollable)
+                Expanded(
+                  child: _buildResultsList(),
+                ),
+              ],
+            );
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFE91E63),
@@ -177,9 +211,12 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader({bool isKeyboardVisible = false}) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      constraints: BoxConstraints(
+        maxHeight: isKeyboardVisible ? 80 : double.infinity,
+      ),
+      padding: EdgeInsets.fromLTRB(16, isKeyboardVisible ? 4 : 8, 16, isKeyboardVisible ? 4 : 8),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -191,91 +228,148 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
         ],
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Title row
-          Row(
-            children: [
-              // Toggle view
-              IconButton(
-                icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view, 
-                  color: Colors.grey[600]),
-                onPressed: () => setState(() => _isGridView = !_isGridView),
-                tooltip: _isGridView ? 'عرض قائمة' : 'عرض شبكة',
-              ),
-              // Filter button
-              Consumer<LawsuitProvider>(
-                builder: (context, provider, _) {
-                  return Stack(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          _showFilters ? Icons.filter_list_off : Icons.filter_list,
-                          color: provider.hasActiveFilters ? const Color(0xFFE91E63) : Colors.grey[600],
+          // Title row (hidden when keyboard is visible)
+          if (!isKeyboardVisible)
+            Row(
+              children: [
+                // Toggle view
+                IconButton(
+                  icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view, 
+                    color: Colors.grey[600]),
+                  onPressed: () => setState(() => _isGridView = !_isGridView),
+                  tooltip: _isGridView ? 'عرض قائمة' : 'عرض شبكة',
+                ),
+                // Filter button
+                Consumer<LawsuitProvider>(
+                  builder: (context, provider, _) {
+                    return Stack(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            Icons.filter_list,
+                            color: provider.hasActiveFilters ? const Color(0xFFE91E63) : Colors.grey[600],
+                          ),
+                          onPressed: _showFilterSheet,
+                          tooltip: 'فلترة',
                         ),
-                        onPressed: () => setState(() => _showFilters = !_showFilters),
-                        tooltip: 'فلترة',
-                      ),
-                      if (provider.hasActiveFilters)
-                        Positioned(
-                          top: 8, right: 8,
-                          child: Container(
-                            width: 8, height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFE91E63),
-                              shape: BoxShape.circle,
+                        if (provider.hasActiveFilters)
+                          Positioned(
+                            top: 8, right: 8,
+                            child: Container(
+                              width: 8, height: 8,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFE91E63),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-              const Expanded(
-                child: Text(
-                  'أرشيف القضايا',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A1A),
+                      ],
+                    );
+                  },
+                ),
+                Expanded(
+                  child: Text(
+                    'أرشيف القضايا',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                    textAlign: TextAlign.right,
                   ),
-                  textAlign: TextAlign.right,
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.archive_outlined, color: Color(0xFFE91E63), size: 28),
+              ],
+            ),
+          if (!isKeyboardVisible) const SizedBox(height: 8),
+          // Search bar with compact controls when keyboard is visible
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Toggle view (shown when keyboard is visible)
+              if (isKeyboardVisible)
+                IconButton(
+                  icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view, 
+                    color: Colors.grey[600], size: 20),
+                  onPressed: () => setState(() => _isGridView = !_isGridView),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: _isGridView ? 'عرض قائمة' : 'عرض شبكة',
+                ),
+              // Filter button (shown when keyboard is visible)
+              if (isKeyboardVisible)
+                Consumer<LawsuitProvider>(
+                  builder: (context, provider, _) {
+                    return Stack(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            Icons.filter_list,
+                            color: provider.hasActiveFilters ? const Color(0xFFE91E63) : Colors.grey[600],
+                            size: 20,
+                          ),
+                          onPressed: _showFilterSheet,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          tooltip: 'فلترة',
+                        ),
+                        if (provider.hasActiveFilters)
+                          Positioned(
+                            top: 4, right: 4,
+                            child: Container(
+                              width: 6, height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFE91E63),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              if (isKeyboardVisible) const SizedBox(width: 4),
+              // Search bar
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  textDirection: ui.TextDirection.rtl,
+                  decoration: InputDecoration(
+                    hintText: 'ابحث برقم الدعوى، الموضوع، الأطراف...',
+                    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+                    prefixIcon: IconButton(
+                      icon: const Icon(Icons.search, color: Color(0xFFE91E63)),
+                      onPressed: _applySearch,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            _applySearch();
+                          },
+                        )
+                      : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF5F5F5),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16, 
+                      vertical: isKeyboardVisible ? 10 : 12,
+                    ),
+                    isDense: isKeyboardVisible,
+                  ),
+                  onSubmitted: (_) => _applySearch(),
+                  onChanged: (value) => setState(() {}),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.archive_outlined, color: Color(0xFFE91E63), size: 28),
             ],
-          ),
-          const SizedBox(height: 8),
-          // Search bar
-          TextField(
-            controller: _searchController,
-            textDirection: ui.TextDirection.rtl,
-            decoration: InputDecoration(
-              hintText: 'ابحث برقم الدعوى، الموضوع، الأطراف...',
-              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-              prefixIcon: IconButton(
-                icon: const Icon(Icons.search, color: Color(0xFFE91E63)),
-                onPressed: _applySearch,
-              ),
-              suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear, size: 20),
-                    onPressed: () {
-                      _searchController.clear();
-                      _applySearch();
-                    },
-                  )
-                : null,
-              filled: true,
-              fillColor: const Color(0xFFF5F5F5),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
-            onSubmitted: (_) => _applySearch(),
-            onChanged: (value) => setState(() {}),
           ),
         ],
       ),
@@ -290,19 +384,20 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
         final active = stats?['by_archive_status']?['active'] ?? 0;
         final archived = stats?['by_archive_status']?['archived'] ?? 0;
 
-        return Container(
-          height: 70,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              _buildStatChip('الكل', total, const Color(0xFF1A1A1A)),
-              const SizedBox(width: 8),
-              _buildStatChip('نشط', active, Colors.green),
-              const SizedBox(width: 8),
-              _buildStatChip('محفوظ', archived, Colors.grey),
-              const SizedBox(width: 8),
-              _buildStatChip('النتائج', provider.totalCount, const Color(0xFFE91E63)),
-            ],
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                _buildStatChip('الكل', total, const Color(0xFF1A1A1A)),
+                const SizedBox(width: 6),
+                _buildStatChip('نشط', active, Colors.green),
+                const SizedBox(width: 6),
+                _buildStatChip('محفوظ', archived, Colors.grey),
+                const SizedBox(width: 6),
+                _buildStatChip('النتائج', provider.totalCount, const Color(0xFFE91E63)),
+              ],
+            ),
           ),
         );
       },
@@ -312,7 +407,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
   Widget _buildStatChip(String label, dynamic count, Color color) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
         decoration: BoxDecoration(
           color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(10),
@@ -320,20 +415,28 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
             ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: color.withOpacity(0.8),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: color.withOpacity(0.8),
+                ),
               ),
             ),
           ],
@@ -407,11 +510,15 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
         );
 
         return Container(
+          constraints: const BoxConstraints(maxHeight: 50),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             reverse: true,
-            child: Row(children: chips.map((c) => Padding(padding: const EdgeInsets.only(left: 6), child: c)).toList()),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: chips.map((c) => Padding(padding: const EdgeInsets.only(left: 6), child: c)).toList(),
+            ),
           ),
         );
       },
@@ -427,134 +534,6 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
       deleteIconColor: const Color(0xFFE91E63),
       side: BorderSide(color: const Color(0xFFE91E63).withOpacity(0.3)),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
-  Widget _buildFilterPanel() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'فلترة متقدمة',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.right,
-          ),
-          const SizedBox(height: 12),
-          // Case type filter
-          _buildFilterDropdown(
-            label: 'نوع القضية',
-            value: _selectedCaseType,
-            items: _caseTypes.map((t) => DropdownMenuItem(
-              value: t['value'] as String,
-              child: Text(t['label'] as String),
-            )).toList(),
-            onChanged: (v) => setState(() => _selectedCaseType = v),
-          ),
-          const SizedBox(height: 10),
-          // Case status filter
-          _buildFilterDropdown(
-            label: 'حالة القضية',
-            value: _selectedCaseStatus,
-            items: _caseStatuses.map((s) => DropdownMenuItem(
-              value: s['value'] as String,
-              child: Text(s['label'] as String),
-            )).toList(),
-            onChanged: (v) => setState(() => _selectedCaseStatus = v),
-          ),
-          const SizedBox(height: 10),
-          // Archive status
-          _buildFilterDropdown(
-            label: 'حالة الأرشفة',
-            value: _selectedArchiveStatus,
-            items: _archiveStatuses.map((a) => DropdownMenuItem(
-              value: a['value'] as String,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(a['icon'] as IconData, size: 18, color: a['color'] as Color),
-                  const SizedBox(width: 8),
-                  Text(a['label'] as String),
-                ],
-              ),
-            )).toList(),
-            onChanged: (v) => setState(() => _selectedArchiveStatus = v),
-          ),
-          const SizedBox(height: 10),
-          // Ordering
-          _buildFilterDropdown(
-            label: 'الترتيب',
-            value: _selectedOrdering,
-            items: _orderingOptions.map((o) => DropdownMenuItem(
-              value: o['value'] as String,
-              child: Text(o['label'] as String),
-            )).toList(),
-            onChanged: (v) => setState(() => _selectedOrdering = v),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _clearFilters,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.grey),
-                  ),
-                  child: const Text('مسح الكل'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
-                  onPressed: _applyFilters,
-                  icon: const Icon(Icons.search, size: 18),
-                  label: const Text('تطبيق الفلترة'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE91E63),
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 44),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterDropdown({
-    required String label,
-    required String? value,
-    required List<DropdownMenuItem<String>> items,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return DropdownButtonFormField<String>(
-      value: value,
-      items: items,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        isDense: true,
-      ),
-      isExpanded: true,
     );
   }
 
@@ -636,9 +615,13 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
   }
 
   Widget _buildListView(LawsuitProvider provider) {
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = keyboardHeight > 0 ? 16.0 : 80.0;
+    
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+      padding: EdgeInsets.fromLTRB(12, 4, 12, bottomPadding),
+      shrinkWrap: false,
       itemCount: provider.lawsuits.length + (provider.isLoading ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == provider.lawsuits.length) {
@@ -658,9 +641,13 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
   }
 
   Widget _buildGridView(LawsuitProvider provider) {
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = keyboardHeight > 0 ? 16.0 : 80.0;
+    
     return GridView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+      padding: EdgeInsets.fromLTRB(12, 4, 12, bottomPadding),
+      shrinkWrap: false,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         mainAxisSpacing: 8,
@@ -1040,6 +1027,226 @@ class _CountBadge extends StatelessWidget {
           Icon(icon, size: 14, color: Colors.grey[500]),
         ],
       ),
+    );
+  }
+}
+
+/// Filter Bottom Sheet
+class _FilterBottomSheet extends StatefulWidget {
+  final String? selectedCaseType;
+  final String? selectedCaseStatus;
+  final String? selectedArchiveStatus;
+  final String? selectedOrdering;
+  final void Function(String?, String?, String?, String?) onApply;
+  final VoidCallback onClear;
+
+  const _FilterBottomSheet({
+    this.selectedCaseType,
+    this.selectedCaseStatus,
+    this.selectedArchiveStatus,
+    this.selectedOrdering,
+    required this.onApply,
+    required this.onClear,
+  });
+
+  @override
+  State<_FilterBottomSheet> createState() => _FilterBottomSheetState();
+}
+
+class _FilterBottomSheetState extends State<_FilterBottomSheet> {
+  String? _caseType;
+  String? _caseStatus;
+  String? _archiveStatus;
+  String? _ordering;
+
+  static const _caseTypes = [
+    {'value': 'دعوى', 'label': 'دعوى'},
+    {'value': 'امر_اداء', 'label': 'أمر أداء'},
+    {'value': 'رد_على_دعوى', 'label': 'رد على دعوى'},
+    {'value': 'استئناف', 'label': 'استئناف'},
+    {'value': 'طعن', 'label': 'طعن'},
+    {'value': 'civil', 'label': 'مدني'},
+    {'value': 'criminal', 'label': 'جنائي'},
+    {'value': 'commercial', 'label': 'تجاري'},
+    {'value': 'personal_status', 'label': 'أحوال شخصية'},
+    {'value': 'labor', 'label': 'عمالي'},
+    {'value': 'administrative', 'label': 'إداري'},
+  ];
+
+  static const _caseStatuses = [
+    {'value': 'جديد', 'label': 'جديد'},
+    {'value': 'قيد_النظر', 'label': 'قيد النظر'},
+    {'value': 'مكتمل', 'label': 'مكتمل'},
+    {'value': 'مغلق', 'label': 'مغلق'},
+  ];
+
+  static const _archiveStatuses = [
+    {'value': 'active', 'label': 'نشط', 'icon': Icons.folder_open, 'color': Colors.green},
+    {'value': 'semi_active', 'label': 'شبه نشط', 'icon': Icons.folder_shared, 'color': Colors.orange},
+    {'value': 'archived', 'label': 'محفوظ', 'icon': Icons.archive, 'color': Colors.grey},
+  ];
+
+  static const _orderingOptions = [
+    {'value': '-created_at', 'label': 'الأحدث أولاً'},
+    {'value': 'created_at', 'label': 'الأقدم أولاً'},
+    {'value': '-filing_date', 'label': 'تاريخ الرفع (الأحدث)'},
+    {'value': 'filing_date', 'label': 'تاريخ الرفع (الأقدم)'},
+    {'value': 'case_number', 'label': 'رقم الدعوى'},
+    {'value': '-updated_at', 'label': 'آخر تحديث'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _caseType = widget.selectedCaseType;
+    _caseStatus = widget.selectedCaseStatus;
+    _archiveStatus = widget.selectedArchiveStatus;
+    _ordering = widget.selectedOrdering;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Title
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    widget.onClear();
+                  },
+                  child: const Text('مسح الكل', style: TextStyle(color: Colors.red)),
+                ),
+                const Text(
+                  'فلترة متقدمة',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Filters - Scrollable
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _buildDropdown(
+                    label: 'نوع القضية',
+                    value: _caseType,
+                    items: _caseTypes.map((t) => DropdownMenuItem(
+                      value: t['value'] as String,
+                      child: Text(t['label'] as String),
+                    )).toList(),
+                    onChanged: (v) => setState(() => _caseType = v),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildDropdown(
+                    label: 'حالة القضية',
+                    value: _caseStatus,
+                    items: _caseStatuses.map((s) => DropdownMenuItem(
+                      value: s['value'] as String,
+                      child: Text(s['label'] as String),
+                    )).toList(),
+                    onChanged: (v) => setState(() => _caseStatus = v),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildDropdown(
+                    label: 'حالة الأرشفة',
+                    value: _archiveStatus,
+                    items: _archiveStatuses.map((a) => DropdownMenuItem(
+                      value: a['value'] as String,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(a['icon'] as IconData, size: 18, color: a['color'] as Color),
+                          const SizedBox(width: 8),
+                          Text(a['label'] as String),
+                        ],
+                      ),
+                    )).toList(),
+                    onChanged: (v) => setState(() => _archiveStatus = v),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildDropdown(
+                    label: 'الترتيب',
+                    value: _ordering,
+                    items: _orderingOptions.map((o) => DropdownMenuItem(
+                      value: o['value'] as String,
+                      child: Text(o['label'] as String),
+                    )).toList(),
+                    onChanged: (v) => setState(() => _ordering = v),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Apply button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: SafeArea(
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    widget.onApply(_caseType, _caseStatus, _archiveStatus, _ordering);
+                  },
+                  icon: const Icon(Icons.check, size: 20),
+                  label: const Text('تطبيق الفلترة', style: TextStyle(fontSize: 16)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE91E63),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdown({
+    required String label,
+    required String? value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      items: items,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      ),
+      isExpanded: true,
     );
   }
 }
