@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:hijri/hijri.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import '../providers/lawsuit_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/lawsuit_model.dart';
 import '../models/party_model.dart';
+import '../config/api_config.dart';
 import 'dart:developer' as developer;
+import 'dart:io';
 
 /// Lawsuit Detail Screen - Updated to support legal templates
 class LawsuitDetailScreen extends StatefulWidget {
@@ -39,6 +47,11 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   List<DefendantModel> _defendants = [];
   bool _isLoadingParties = false;
   
+  // Attachments data
+  List<Map<String, dynamic>> _attachments = [];
+  bool _isLoadingAttachments = false;
+  bool _isUploadingAttachment = false;
+  
   bool get _isEditMode => widget.lawsuitId != null;
 
   @override
@@ -56,6 +69,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadLawsuit();
         _loadParties();
+        _loadAttachments();
       });
     } else {
       // Load templates for default case type
@@ -383,25 +397,51 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       filingDate: DateTime.now(),
     );
 
-    final success = _isEditMode
-        ? await provider.updateLawsuit(widget.lawsuitId!, lawsuit)
-        : await provider.createLawsuit(lawsuit);
-
-    if (success && mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isEditMode ? 'تم تحديث الدعوى بنجاح' : 'تم إنشاء الدعوى بنجاح'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(provider.errorMessage ?? 'حدث خطأ'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    if (_isEditMode) {
+      final success = await provider.updateLawsuit(widget.lawsuitId!, lawsuit);
+      if (success && mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تحديث الدعوى بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(provider.errorMessage ?? 'حدث خطأ'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } else {
+      // Create new lawsuit
+      final createdLawsuit = await provider.createLawsuit(lawsuit);
+      if (createdLawsuit != null && createdLawsuit.id != null && mounted) {
+        Navigator.pop(context);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => LawsuitDetailScreen(lawsuitId: createdLawsuit.id!),
+          ),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم إنشاء الدعوى بنجاح. يمكنك الآن إضافة المستندات'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(provider.errorMessage ?? 'حدث خطأ في إنشاء الدعوى'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -544,6 +584,14 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
               const Divider(),
               const SizedBox(height: 16),
               _buildPartiesSection(),
+              const SizedBox(height: 16),
+            ],
+
+            // Attachments Section (only in edit mode)
+            if (_isEditMode && widget.lawsuitId != null) ...[
+              const Divider(),
+              const SizedBox(height: 16),
+              _buildAttachmentsSection(),
               const SizedBox(height: 16),
             ],
 
@@ -1096,6 +1144,848 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('خطأ: ${e.toString()}'), backgroundColor: Colors.red),
         );
+      }
+    }
+  }
+
+  Widget _buildAttachmentsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'مستندات الدعوى',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isUploadingAttachment)
+                  const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.attach_file, color: Colors.blue),
+                  onPressed: _isUploadingAttachment ? null : _showAddAttachmentDialog,
+                  tooltip: 'إضافة مستند',
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        if (_isLoadingAttachments)
+          const Center(child: Padding(
+            padding: EdgeInsets.all(16.0),
+            child: CircularProgressIndicator(),
+          ))
+        else if (_attachments.isEmpty && !_isUploadingAttachment)
+          Card(
+            color: Colors.grey.shade50,
+            child: const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(
+                child: Text(
+                  'لا توجد مستندات مرفقة',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+          )
+        else
+          ..._attachments.map((attachment) => _buildAttachmentCard(attachment)),
+        if (_isUploadingAttachment && _attachments.isEmpty)
+          Card(
+            color: Colors.blue.shade50,
+            child: const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 16),
+                  Text('جاري رفع المستند...'),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildAttachmentCard(Map<String, dynamic> attachment) {
+    final docTypeDisplay = attachment['document_type_display'] ?? attachment['document_type'] ?? 'غير محدد';
+    final fileName = attachment['original_filename'] ?? attachment['file'] ?? 'ملف';
+    final content = attachment['content'] ?? '';
+    final evidenceBasis = attachment['evidence_basis'] ?? '';
+    final pageCount = attachment['page_count'] ?? 0;
+    final fileSize = attachment['file_size_display'] ?? '';
+    final createdAt = attachment['created_at'] != null
+        ? DateFormat('yyyy-MM-dd').format(DateTime.parse(attachment['created_at']))
+        : '';
+    final fileUrl = attachment['file_url'] ?? attachment['file'] ?? '';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const Icon(Icons.description, color: Colors.blue),
+        title: Text(
+          docTypeDisplay,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (fileName.isNotEmpty) Text('الملف: $fileName'),
+            if (content.isNotEmpty) 
+              Text(
+                'المضمون: ${content.length > 50 ? content.substring(0, 50) + "..." : content}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            if (pageCount > 0) Text('عدد الصفحات: $pageCount'),
+            if (fileSize.isNotEmpty) Text('الحجم: $fileSize'),
+            if (createdAt.isNotEmpty) Text('تاريخ الإضافة: $createdAt'),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (fileUrl.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.download, color: Colors.blue),
+                onPressed: () => _downloadOrOpenAttachment(fileUrl, fileName),
+                tooltip: 'تحميل/فتح المستند',
+              ),
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.orange),
+              onPressed: () => _showEditAttachmentDialog(attachment),
+              tooltip: 'تعديل المستند',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: () => _deleteAttachment(attachment['id']),
+              tooltip: 'حذف المستند',
+            ),
+          ],
+        ),
+        isThreeLine: true,
+      ),
+    );
+  }
+
+  Future<void> _deleteAttachment(int? attachmentId) async {
+    if (attachmentId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: const Text('هل أنت متأكد من حذف هذا المستند؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.apiService.deleteAttachment(attachmentId);
+      
+      await _loadAttachments();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم حذف المستند بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      developer.log('Error deleting attachment: $e', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في حذف المستند: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadAttachments() async {
+    if (widget.lawsuitId == null || !mounted) return;
+    
+    setState(() {
+      _isLoadingAttachments = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final response = await authProvider.apiService.getAttachments(lawsuitId: widget.lawsuitId);
+      
+      if (mounted) {
+        List<dynamic>? attachmentsData;
+        if (response['results'] != null) {
+          attachmentsData = response['results'] as List?;
+        } else if (response['data'] != null && response['data'] is Map) {
+          attachmentsData = (response['data'] as Map<String, dynamic>)['results'] as List?;
+        } else if (response is List) {
+          attachmentsData = response;
+        }
+        
+        setState(() {
+          _attachments = (attachmentsData ?? []).cast<Map<String, dynamic>>();
+          _isLoadingAttachments = false;
+        });
+      }
+    } catch (e) {
+      developer.log('Error loading attachments: $e', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        setState(() {
+          _isLoadingAttachments = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _showAddAttachmentDialog() async {
+    if (widget.lawsuitId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يجب حفظ الدعوى أولاً قبل إضافة المستندات'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final formKey = GlobalKey<FormState>();
+    final contentController = TextEditingController();
+    final evidenceBasisController = TextEditingController();
+    final pageCountController = TextEditingController(text: '1');
+    String? selectedDocType = 'other';
+    DateTime? selectedDate = DateTime.now();
+    File? selectedFile;
+
+    final docTypes = [
+      {'value': 'identity', 'label': 'هوية/جواز سفر'},
+      {'value': 'contract', 'label': 'عقد'},
+      {'value': 'certificate', 'label': 'شهادة'},
+      {'value': 'evidence', 'label': 'دليل'},
+      {'value': 'statement', 'label': 'بيان'},
+      {'value': 'receipt', 'label': 'إيصال'},
+      {'value': 'other', 'label': 'أخرى'},
+    ];
+
+    bool? shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('إضافة مستند جديد'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: selectedDocType,
+                    decoration: const InputDecoration(labelText: 'نوع المستند *'),
+                    items: docTypes.map((t) => DropdownMenuItem(
+                      value: t['value'] as String,
+                      child: Text(t['label'] as String),
+                    )).toList(),
+                    onChanged: (v) {
+                      setDialogState(() {
+                        selectedDocType = v;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: contentController,
+                    decoration: const InputDecoration(
+                      labelText: 'مضمون المستند *',
+                      hintText: 'وصف محتوى المستند',
+                    ),
+                    maxLines: 3,
+                    validator: (v) => v?.isEmpty ?? true ? 'مطلوب' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: evidenceBasisController,
+                    decoration: const InputDecoration(
+                      labelText: 'وجه الاستدلال *',
+                      hintText: 'كيف يستدل بهذا المستند',
+                    ),
+                    maxLines: 2,
+                    validator: (v) => v?.isEmpty ?? true ? 'مطلوب' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: pageCountController,
+                    decoration: const InputDecoration(labelText: 'عدد الصفحات *'),
+                    keyboardType: TextInputType.number,
+                    validator: (v) {
+                      if (v?.isEmpty ?? true) return 'مطلوب';
+                      if (int.tryParse(v!) == null || int.parse(v) < 1) {
+                        return 'يجب أن يكون رقماً أكبر من 0';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    title: Text('التاريخ الميلادي: ${selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : 'غير محدد'}'),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: dialogContext,
+                        initialDate: selectedDate ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      FilePickerResult? result = await FilePicker.platform.pickFiles(
+                        type: FileType.any,
+                        allowMultiple: false,
+                      );
+                      if (result != null && result.files.single.path != null) {
+                        setDialogState(() {
+                          selectedFile = File(result!.files.single.path!);
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.attach_file),
+                    label: Text(selectedFile != null 
+                        ? 'تم اختيار: ${selectedFile!.path.split('/').last}'
+                        : 'اختر ملف *'),
+                  ),
+                  if (selectedFile != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.insert_drive_file, color: Colors.blue[700]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  selectedFile!.path.split('/').last,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[900],
+                                  ),
+                                ),
+                                Text(
+                                  'الحجم: ${_formatFileSize(selectedFile!.lengthSync())}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () {
+                              setDialogState(() {
+                                selectedFile = null;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: _isUploadingAttachment ? null : () {
+                if (formKey.currentState!.validate() && selectedDate != null && selectedFile != null) {
+                  Navigator.pop(dialogContext, true);
+                } else {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('يرجى ملء جميع الحقول المطلوبة واختيار ملف'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: _isUploadingAttachment
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('إضافة'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (shouldSave == true && selectedFile != null && selectedDate != null) {
+      await _uploadAttachment(
+        file: selectedFile!,
+        documentType: selectedDocType!,
+        content: contentController.text,
+        evidenceBasis: evidenceBasisController.text,
+        pageCount: int.parse(pageCountController.text),
+        gregorianDate: selectedDate!,
+      );
+    }
+
+    contentController.dispose();
+    evidenceBasisController.dispose();
+    pageCountController.dispose();
+  }
+
+  Future<void> _showEditAttachmentDialog(Map<String, dynamic> attachment) async {
+    if (widget.lawsuitId == null) return;
+
+    final formKey = GlobalKey<FormState>();
+    final contentController = TextEditingController(text: attachment['content'] ?? '');
+    final evidenceBasisController = TextEditingController(text: attachment['evidence_basis'] ?? '');
+    final pageCountController = TextEditingController(text: (attachment['page_count'] ?? 1).toString());
+    String? selectedDocType = attachment['document_type'] ?? 'other';
+    DateTime? selectedDate = attachment['gregorian_date'] != null
+        ? DateTime.parse(attachment['gregorian_date'])
+        : DateTime.now();
+    File? selectedFile;
+
+    final docTypes = [
+      {'value': 'identity', 'label': 'هوية/جواز سفر'},
+      {'value': 'contract', 'label': 'عقد'},
+      {'value': 'certificate', 'label': 'شهادة'},
+      {'value': 'evidence', 'label': 'دليل'},
+      {'value': 'statement', 'label': 'بيان'},
+      {'value': 'receipt', 'label': 'إيصال'},
+      {'value': 'other', 'label': 'أخرى'},
+    ];
+
+    bool? shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('تعديل المستند'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: selectedDocType,
+                    decoration: const InputDecoration(labelText: 'نوع المستند *'),
+                    items: docTypes.map((t) => DropdownMenuItem(
+                      value: t['value'] as String,
+                      child: Text(t['label'] as String),
+                    )).toList(),
+                    onChanged: (v) {
+                      setDialogState(() {
+                        selectedDocType = v;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: contentController,
+                    decoration: const InputDecoration(
+                      labelText: 'مضمون المستند *',
+                      hintText: 'وصف محتوى المستند',
+                    ),
+                    maxLines: 3,
+                    validator: (v) => v?.isEmpty ?? true ? 'مطلوب' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: evidenceBasisController,
+                    decoration: const InputDecoration(
+                      labelText: 'وجه الاستدلال *',
+                      hintText: 'كيف يستدل بهذا المستند',
+                    ),
+                    maxLines: 2,
+                    validator: (v) => v?.isEmpty ?? true ? 'مطلوب' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: pageCountController,
+                    decoration: const InputDecoration(labelText: 'عدد الصفحات *'),
+                    keyboardType: TextInputType.number,
+                    validator: (v) {
+                      if (v?.isEmpty ?? true) return 'مطلوب';
+                      if (int.tryParse(v!) == null || int.parse(v) < 1) {
+                        return 'يجب أن يكون رقماً أكبر من 0';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    title: Text('التاريخ الميلادي: ${selectedDate != null ? DateFormat('yyyy-MM-dd').format(selectedDate!) : 'غير محدد'}'),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: dialogContext,
+                        initialDate: selectedDate ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'ملف جديد (اختياري - اتركه فارغاً للاحتفاظ بالملف الحالي)',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      FilePickerResult? result = await FilePicker.platform.pickFiles(
+                        type: FileType.any,
+                        allowMultiple: false,
+                      );
+                      if (result != null && result.files.single.path != null) {
+                        setDialogState(() {
+                          selectedFile = File(result!.files.single.path!);
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.attach_file),
+                    label: Text(selectedFile != null 
+                        ? 'تم اختيار: ${selectedFile!.path.split('/').last}'
+                        : 'اختر ملف جديد (اختياري)'),
+                  ),
+                  if (selectedFile != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.insert_drive_file, color: Colors.blue[700]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  selectedFile!.path.split('/').last,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[900],
+                                  ),
+                                ),
+                                Text(
+                                  'الحجم: ${_formatFileSize(selectedFile!.lengthSync())}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue[700],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () {
+                              setDialogState(() {
+                                selectedFile = null;
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: _isUploadingAttachment ? null : () {
+                if (formKey.currentState!.validate() && selectedDate != null) {
+                  Navigator.pop(dialogContext, true);
+                } else {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('يرجى ملء جميع الحقول المطلوبة'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: _isUploadingAttachment
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (shouldSave == true && selectedDate != null) {
+      await _updateAttachment(
+        attachmentId: attachment['id'],
+        documentType: selectedDocType!,
+        content: contentController.text,
+        evidenceBasis: evidenceBasisController.text,
+        pageCount: int.parse(pageCountController.text),
+        gregorianDate: selectedDate!,
+        newFile: selectedFile,
+      );
+    }
+
+    contentController.dispose();
+    evidenceBasisController.dispose();
+    pageCountController.dispose();
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _downloadOrOpenAttachment(String fileUrl, String fileName) async {
+    try {
+      final uri = Uri.parse(fileUrl);
+      
+      // If it's a full URL, try to open it directly
+      if (uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https')) {
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('لا يمكن فتح الملف'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
+      } else {
+        // If it's a relative URL, construct full URL
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final fullUrl = '${ApiConfig.baseUrl}$fileUrl';
+        final fullUri = Uri.parse(fullUrl);
+        
+        if (await canLaunchUrl(fullUri)) {
+          await launchUrl(fullUri, mode: LaunchMode.externalApplication);
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('لا يمكن فتح الملف'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      developer.log('Error opening attachment: $e', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في فتح الملف: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadAttachment({
+    required File file,
+    required String documentType,
+    required String content,
+    required String evidenceBasis,
+    required int pageCount,
+    required DateTime gregorianDate,
+  }) async {
+    if (widget.lawsuitId == null) return;
+
+    setState(() {
+      _isUploadingAttachment = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      // Convert gregorian date to hijri
+      final hijriDate = HijriCalendar.fromDate(gregorianDate);
+      final hijriDateString = '${hijriDate.hYear}/${hijriDate.hMonth}/${hijriDate.hDay}';
+
+      // Upload file
+      await authProvider.apiService.uploadAttachment(
+        lawsuitId: widget.lawsuitId!,
+        filePath: file.path,
+        documentType: documentType,
+        gregorianDate: DateFormat('yyyy-MM-dd').format(gregorianDate),
+        hijriDate: hijriDateString,
+        pageCount: pageCount,
+        content: content,
+        evidenceBasis: evidenceBasis,
+      );
+
+      // Reload attachments
+      await _loadAttachments();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم رفع المستند بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      developer.log('Error uploading attachment: $e', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في رفع المستند: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingAttachment = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _updateAttachment({
+    required int attachmentId,
+    required String documentType,
+    required String content,
+    required String evidenceBasis,
+    required int pageCount,
+    required DateTime gregorianDate,
+    File? newFile,
+  }) async {
+    if (widget.lawsuitId == null) return;
+
+    setState(() {
+      _isUploadingAttachment = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      // Convert gregorian date to hijri
+      final hijriDate = HijriCalendar.fromDate(gregorianDate);
+      final hijriDateString = '${hijriDate.hYear}/${hijriDate.hMonth}/${hijriDate.hDay}';
+
+      // Update attachment
+      await authProvider.apiService.updateAttachment(
+        id: attachmentId,
+        documentType: documentType,
+        gregorianDate: DateFormat('yyyy-MM-dd').format(gregorianDate),
+        hijriDate: hijriDateString,
+        pageCount: pageCount,
+        content: content,
+        evidenceBasis: evidenceBasis,
+        filePath: newFile?.path,
+      );
+
+      // Reload attachments
+      await _loadAttachments();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تحديث المستند بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      developer.log('Error updating attachment: $e', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في تحديث المستند: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingAttachment = false;
+        });
       }
     }
   }

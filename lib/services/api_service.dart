@@ -79,14 +79,52 @@ class ApiService {
           }
           break;
         case 'PUT':
-          response = await http
-              .put(url, headers: _headers, body: jsonEncode(body))
-              .timeout(ApiConfig.timeout);
+          if (files != null) {
+            // For file uploads with PUT, use multipart
+            var request = http.MultipartRequest('PUT', url);
+            request.headers.addAll(_headers);
+            request.headers.remove('Content-Type'); // Let multipart set it
+            
+            body?.forEach((key, value) {
+              request.fields[key] = value.toString();
+            });
+            
+            // Add files asynchronously
+            for (var entry in files.entries) {
+              request.files.add(await http.MultipartFile.fromPath(entry.key, entry.value));
+            }
+            
+            var streamedResponse = await request.send();
+            response = await http.Response.fromStream(streamedResponse);
+          } else {
+            response = await http
+                .put(url, headers: _headers, body: jsonEncode(body))
+                .timeout(ApiConfig.timeout);
+          }
           break;
         case 'PATCH':
-          response = await http
-              .patch(url, headers: _headers, body: jsonEncode(body))
-              .timeout(ApiConfig.timeout);
+          if (files != null) {
+            // For file uploads with PATCH, use multipart
+            var request = http.MultipartRequest('PATCH', url);
+            request.headers.addAll(_headers);
+            request.headers.remove('Content-Type'); // Let multipart set it
+            
+            body?.forEach((key, value) {
+              request.fields[key] = value.toString();
+            });
+            
+            // Add files asynchronously
+            for (var entry in files.entries) {
+              request.files.add(await http.MultipartFile.fromPath(entry.key, entry.value));
+            }
+            
+            var streamedResponse = await request.send();
+            response = await http.Response.fromStream(streamedResponse);
+          } else {
+            response = await http
+                .patch(url, headers: _headers, body: body != null ? jsonEncode(body) : null)
+                .timeout(ApiConfig.timeout);
+          }
           break;
         case 'DELETE':
           response = await http
@@ -465,17 +503,68 @@ class ApiService {
   Future<Map<String, dynamic>> uploadAttachment({
     required int lawsuitId,
     required String filePath,
-    String? description,
+    required String documentType,
+    required String gregorianDate,
+    required String hijriDate,
+    required int pageCount,
+    required String content,
+    required String evidenceBasis,
   }) async {
     return await _makeRequest(
       'POST',
       ApiConfig.attachmentsEndpoint,
       body: {
-        'lawsuit': lawsuitId,
-        if (description != null) 'description': description,
+        'lawsuit_id': lawsuitId.toString(),
+        'document_type': documentType,
+        'gregorian_date': gregorianDate,
+        'hijri_date': hijriDate,
+        'page_count': pageCount.toString(),
+        'content': content,
+        'evidence_basis': evidenceBasis,
       },
       files: {'file': filePath},
     );
+  }
+
+  Future<Map<String, dynamic>> updateAttachment({
+    required int id,
+    required String documentType,
+    required String gregorianDate,
+    required String hijriDate,
+    required int pageCount,
+    required String content,
+    required String evidenceBasis,
+    String? filePath,
+  }) async {
+    final body = {
+      'document_type': documentType,
+      'gregorian_date': gregorianDate,
+      'hijri_date': hijriDate,
+      'page_count': pageCount.toString(),
+      'content': content,
+      'evidence_basis': evidenceBasis,
+    };
+
+    if (filePath != null) {
+      // If new file is provided, use multipart
+      return await _makeRequest(
+        'PATCH',
+        '${ApiConfig.attachmentsEndpoint}$id/',
+        body: body,
+        files: {'file': filePath},
+      );
+    } else {
+      // If no new file, just update fields
+      return await _makeRequest(
+        'PATCH',
+        '${ApiConfig.attachmentsEndpoint}$id/',
+        body: body,
+      );
+    }
+  }
+
+  Future<void> deleteAttachment(int id) async {
+    await _makeRequest('DELETE', '${ApiConfig.attachmentsEndpoint}$id/');
   }
 
   // Hearings

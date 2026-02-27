@@ -71,8 +71,8 @@ dependencies:
   # WebView for in-app browsing
   webview_flutter: ^4.4.2
   
-  # File picker for attachments (commented out - will add when needed)
-  # file_picker: ^6.1.1
+  # File picker for attachments
+  file_picker: ^6.1.1
   
   # Image picker (commented out - will add when needed)
   # Image picker (commented out - will add when needed)

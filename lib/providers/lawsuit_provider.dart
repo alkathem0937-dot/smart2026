@@ -246,7 +246,7 @@ class LawsuitProvider with ChangeNotifier {
   }
 
   // Create lawsuit
-  Future<bool> createLawsuit(LawsuitModel lawsuit) async {
+  Future<LawsuitModel?> createLawsuit(LawsuitModel lawsuit) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -254,14 +254,15 @@ class LawsuitProvider with ChangeNotifier {
     try {
       final newLawsuit = await _apiService.createLawsuit(lawsuit);
       _lawsuits.insert(0, newLawsuit);
+      _selectedLawsuit = newLawsuit; // Store created lawsuit for easy access
       _isLoading = false;
       notifyListeners();
-      return true;
+      return newLawsuit;
     } catch (e) {
       _errorMessage = e.toString();
       _isLoading = false;
       notifyListeners();
-      return false;
+      return null;
     }
   }
 
