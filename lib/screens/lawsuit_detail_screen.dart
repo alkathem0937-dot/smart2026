@@ -125,10 +125,18 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       developer.log('Defendants response: $defendantsResponse', name: 'LawsuitDetailScreen');
 
       if (mounted) {
-        final plaintiffsList = (plaintiffsResponse['results'] as List? ?? [])
+        // Handle different response structures: could be {'results': [...]} or {'data': {'results': [...]}}
+        List<dynamic>? plaintiffsData;
+        if (plaintiffsResponse['results'] != null) {
+          plaintiffsData = plaintiffsResponse['results'] as List?;
+        } else if (plaintiffsResponse['data'] != null && plaintiffsResponse['data'] is Map) {
+          plaintiffsData = (plaintiffsResponse['data'] as Map<String, dynamic>)['results'] as List?;
+        }
+        
+        final plaintiffsList = (plaintiffsData ?? [])
             .map((json) {
               try {
-                return PlaintiffModel.fromJson(json);
+                return PlaintiffModel.fromJson(json as Map<String, dynamic>);
               } catch (e) {
                 developer.log('Error parsing plaintiff: $e, json: $json', name: 'LawsuitDetailScreen');
                 return null;
@@ -137,10 +145,18 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
             .whereType<PlaintiffModel>()
             .toList();
         
-        final defendantsList = (defendantsResponse['results'] as List? ?? [])
+        // Handle different response structures for defendants
+        List<dynamic>? defendantsData;
+        if (defendantsResponse['results'] != null) {
+          defendantsData = defendantsResponse['results'] as List?;
+        } else if (defendantsResponse['data'] != null && defendantsResponse['data'] is Map) {
+          defendantsData = (defendantsResponse['data'] as Map<String, dynamic>)['results'] as List?;
+        }
+        
+        final defendantsList = (defendantsData ?? [])
             .map((json) {
               try {
-                return DefendantModel.fromJson(json);
+                return DefendantModel.fromJson(json as Map<String, dynamic>);
               } catch (e) {
                 developer.log('Error parsing defendant: $e, json: $json', name: 'LawsuitDetailScreen');
                 return null;
@@ -148,10 +164,74 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
             })
             .whereType<DefendantModel>()
             .toList();
+        
+        developer.log('Parsed ${plaintiffsList.length} plaintiffs and ${defendantsList.length} defendants from server', name: 'LawsuitDetailScreen');
 
         setState(() {
-          _plaintiffs = plaintiffsList;
-          _defendants = defendantsList;
+          // Merge server data with local data to avoid losing newly added parties
+          // On initial load (_plaintiffs and _defendants are empty), use server data directly
+          // On subsequent loads (after adding parties), merge to preserve newly added ones
+          
+          final isInitialLoad = _plaintiffs.isEmpty && _defendants.isEmpty;
+          
+          if (isInitialLoad) {
+            // Initial load: use server data directly
+            developer.log('Initial load: using server data directly', name: 'LawsuitDetailScreen');
+            _plaintiffs = plaintiffsList;
+            _defendants = defendantsList;
+          } else {
+            // Subsequent load: merge server data with local data
+            // If server returned empty lists but we have local data, don't overwrite
+            if (plaintiffsList.isEmpty && _plaintiffs.isNotEmpty) {
+              developer.log('Server returned empty plaintiffs but we have local data, keeping local', name: 'LawsuitDetailScreen');
+              // Keep local data, don't overwrite
+            } else {
+              // For plaintiffs: merge by ID, keeping local ones that aren't in server response
+              final serverPlaintiffIds = plaintiffsList.map((p) => p.id).whereType<int>().toSet();
+              final serverPlaintiffNames = plaintiffsList.map((p) => p.name.toLowerCase().trim()).toSet();
+              
+              // Start with server data (most up-to-date)
+              final mergedPlaintiffs = <PlaintiffModel>[...plaintiffsList];
+              
+              // Add local parties that aren't in server response yet (newly added, pending sync)
+              for (var localPlaintiff in _plaintiffs) {
+                final hasId = localPlaintiff.id != null;
+                final idNotInServer = hasId && !serverPlaintiffIds.contains(localPlaintiff.id);
+                final nameNotInServer = !serverPlaintiffNames.contains(localPlaintiff.name.toLowerCase().trim());
+                
+                // Keep if: has ID but not in server, OR no ID and name not in server (newly added, pending)
+                if (idNotInServer || (!hasId && nameNotInServer)) {
+                  mergedPlaintiffs.add(localPlaintiff);
+                }
+              }
+              
+              _plaintiffs = mergedPlaintiffs;
+            }
+            
+            // Same for defendants
+            if (defendantsList.isEmpty && _defendants.isNotEmpty) {
+              developer.log('Server returned empty defendants but we have local data, keeping local', name: 'LawsuitDetailScreen');
+              // Keep local data, don't overwrite
+            } else {
+              final serverDefendantIds = defendantsList.map((d) => d.id).whereType<int>().toSet();
+              final serverDefendantNames = defendantsList.map((d) => d.name.toLowerCase().trim()).toSet();
+              
+              final mergedDefendants = <DefendantModel>[...defendantsList];
+              
+              for (var localDefendant in _defendants) {
+                final hasId = localDefendant.id != null;
+                final idNotInServer = hasId && !serverDefendantIds.contains(localDefendant.id);
+                final nameNotInServer = !serverDefendantNames.contains(localDefendant.name.toLowerCase().trim());
+                
+                if (idNotInServer || (!hasId && nameNotInServer)) {
+                  mergedDefendants.add(localDefendant);
+                }
+              }
+              
+              _defendants = mergedDefendants;
+            }
+          }
+          
           _isLoadingParties = false;
         });
         
@@ -162,14 +242,39 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       developer.log('Stack trace: $stackTrace', name: 'LawsuitDetailScreen');
       if (mounted) {
         setState(() {
+          // Don't clear existing lists on error - keep what we have
           _isLoadingParties = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('خطأ في تحميل الأطراف: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        
+        // Extract error message
+        String errorMessage = e.toString();
+        // Remove "Exception: " prefix if present
+        if (errorMessage.startsWith('Exception: ')) {
+          errorMessage = errorMessage.substring(11);
+        }
+        
+        // Only show error if lists are empty (initial load failed)
+        // If we have local data, the error might be from a background sync
+        if (_plaintiffs.isEmpty && _defendants.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('خطأ في تحميل الأطراف: $errorMessage'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'إعادة المحاولة',
+                textColor: Colors.white,
+                onPressed: () {
+                  _loadParties();
+                },
+              ),
+            ),
+          );
+        } else {
+          // We have local data, so this might be a background sync error
+          // Show a less intrusive message
+          developer.log('Background sync failed but we have local data', name: 'LawsuitDetailScreen');
+        }
       }
     }
   }
@@ -557,12 +662,15 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         Card(
           color: Colors.green.shade50,
           child: ExpansionTile(
-            key: ValueKey('plaintiffs_${_plaintiffs.length}_${_isLoadingParties}'),
+            key: ValueKey('plaintiffs_${_plaintiffs.length}'),
             leading: const Icon(Icons.person, color: Colors.green),
             title: Text('المدعون (${_plaintiffs.length})'),
             initiallyExpanded: _plaintiffs.isNotEmpty,
-            children: _isLoadingParties
-                ? [const Center(child: CircularProgressIndicator())]
+            children: _isLoadingParties && _plaintiffs.isEmpty
+                ? [const Center(child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ))]
                 : _plaintiffs.isEmpty
                     ? [
                         const Padding(
@@ -579,12 +687,15 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         Card(
           color: Colors.orange.shade50,
           child: ExpansionTile(
-            key: ValueKey('defendants_${_defendants.length}_${_isLoadingParties}'),
+            key: ValueKey('defendants_${_defendants.length}'),
             leading: const Icon(Icons.person_outline, color: Colors.orange),
             title: Text('المدعى عليهم (${_defendants.length})'),
             initiallyExpanded: _defendants.isNotEmpty,
-            children: _isLoadingParties
-                ? [const Center(child: CircularProgressIndicator())]
+            children: _isLoadingParties && _defendants.isEmpty
+                ? [const Center(child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ))]
                 : _defendants.isEmpty
                     ? [
                         const Padding(
@@ -882,14 +993,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         }
       }
 
-      // Reload parties from server to ensure sync (in background)
-      if (mounted) {
-        // Don't await - let it run in background while UI updates
-        _loadParties().catchError((e) {
-          developer.log('Error reloading parties: $e', name: 'LawsuitDetailScreen');
-        });
-      }
-
+      // Show success message first
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -900,6 +1004,32 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
+      }
+
+      // For new parties: we already added them locally with the server response,
+      // so no need to reload immediately. Only reload for updates to ensure sync.
+      // We'll do a background sync after a longer delay to catch any edge cases.
+      if (mounted) {
+        if (party == null) {
+          // New party: do a background sync after delay, but merging will preserve local data
+          // This is just to ensure we're in sync with server, not to replace local data
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) {
+              _loadParties().catchError((e) {
+                developer.log('Error syncing parties: $e', name: 'LawsuitDetailScreen');
+              });
+            }
+          });
+        } else {
+          // Updated party: reload after short delay to get latest data
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _loadParties().catchError((e) {
+                developer.log('Error reloading parties: $e', name: 'LawsuitDetailScreen');
+              });
+            }
+          });
+        }
       }
     } catch (e, stackTrace) {
       developer.log('Error saving party: $e', name: 'LawsuitDetailScreen');

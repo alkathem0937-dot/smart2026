@@ -175,28 +175,24 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Column(
-              children: [
-                // Header with search (reduced padding when keyboard is visible)
-                _buildHeader(isKeyboardVisible: isKeyboardVisible),
-                // Stats bar (hidden when keyboard is visible to save space)
-                if (!isKeyboardVisible) _buildStatsBar(),
-                // Tabs (hidden when keyboard is visible to save space)
-                if (!isKeyboardVisible) _buildTabs(),
-                // Filter chips (hidden when keyboard is visible to save space)
-                if (!isKeyboardVisible) _buildActiveFilterChips(),
-                // Results list (takes remaining space, scrollable)
-                Expanded(
-                  child: _buildResultsList(),
-                ),
-              ],
-            );
-          },
+        child: Column(
+          children: [
+            // Header with search (reduced padding when keyboard is visible)
+            _buildHeader(isKeyboardVisible: isKeyboardVisible),
+            // Stats bar (hidden when keyboard is visible to save space)
+            if (!isKeyboardVisible) _buildStatsBar(),
+            // Tabs (hidden when keyboard is visible to save space)
+            if (!isKeyboardVisible) _buildTabs(),
+            // Filter chips (hidden when keyboard is visible to save space)
+            if (!isKeyboardVisible) _buildActiveFilterChips(),
+            // Results list (takes remaining space, scrollable)
+            Expanded(
+              child: _buildResultsList(),
+            ),
+          ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: isKeyboardVisible ? null : FloatingActionButton(
         backgroundColor: const Color(0xFFE91E63),
         onPressed: () {
           Navigator.push(
@@ -213,10 +209,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
 
   Widget _buildHeader({bool isKeyboardVisible = false}) {
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: isKeyboardVisible ? 80 : double.infinity,
-      ),
-      padding: EdgeInsets.fromLTRB(16, isKeyboardVisible ? 4 : 8, 16, isKeyboardVisible ? 4 : 8),
+      padding: EdgeInsets.fromLTRB(6, isKeyboardVisible ? 1 : 1, 1, isKeyboardVisible ? 1 : 1),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -280,20 +273,20 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                     textAlign: TextAlign.right,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 7),
                 const Icon(Icons.archive_outlined, color: Color(0xFFE91E63), size: 28),
               ],
             ),
-          if (!isKeyboardVisible) const SizedBox(height: 8),
+          if (!isKeyboardVisible) const SizedBox(height: 3),
           // Search bar with compact controls when keyboard is visible
+          if (isKeyboardVisible) const SizedBox(height: 0.5),
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               // Toggle view (shown when keyboard is visible)
               if (isKeyboardVisible)
                 IconButton(
                   icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view, 
-                    color: Colors.grey[600], size: 20),
+                    color: Colors.grey[500], size: 12),
                   onPressed: () => setState(() => _isGridView = !_isGridView),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -308,8 +301,8 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                         IconButton(
                           icon: Icon(
                             Icons.filter_list,
-                            color: provider.hasActiveFilters ? const Color(0xFFE91E63) : Colors.grey[600],
-                            size: 20,
+                            color: provider.hasActiveFilters ? const Color(0xFFE91E63) : Colors.grey[400],
+                            size: 14,
                           ),
                           onPressed: _showFilterSheet,
                           padding: EdgeInsets.zero,
@@ -320,7 +313,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                           Positioned(
                             top: 4, right: 4,
                             child: Container(
-                              width: 6, height: 6,
+                              width: 5, height: 5,
                               decoration: const BoxDecoration(
                                 color: Color(0xFFE91E63),
                                 shape: BoxShape.circle,
@@ -331,7 +324,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                     );
                   },
                 ),
-              if (isKeyboardVisible) const SizedBox(width: 4),
+              if (isKeyboardVisible) const SizedBox(width: 1),
               // Search bar
               Expanded(
                 child: TextField(
@@ -346,7 +339,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                     ),
                     suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
+                          icon: const Icon(Icons.clear, size: 14),
                           onPressed: () {
                             _searchController.clear();
                             _applySearch();
@@ -356,14 +349,13 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                     filled: true,
                     fillColor: const Color(0xFFF5F5F5),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: EdgeInsets.symmetric(
-                      horizontal: 16, 
-                      vertical: isKeyboardVisible ? 10 : 12,
+                      horizontal: 10, 
+                      vertical: isKeyboardVisible ? 1 : 1,
                     ),
-                    isDense: isKeyboardVisible,
                   ),
                   onSubmitted: (_) => _applySearch(),
                   onChanged: (value) => setState(() {}),
@@ -385,7 +377,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
         final archived = stats?['by_archive_status']?['archived'] ?? 0;
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: IntrinsicHeight(
             child: Row(
               children: [
@@ -510,15 +502,11 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
         );
 
         return Container(
-          constraints: const BoxConstraints(maxHeight: 50),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             reverse: true,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: chips.map((c) => Padding(padding: const EdgeInsets.only(left: 6), child: c)).toList(),
-            ),
+            child: Row(children: chips.map((c) => Padding(padding: const EdgeInsets.only(left: 6), child: c)).toList()),
           ),
         );
       },
@@ -550,13 +538,13 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Text(
                   provider.errorMessage ?? 'حدث خطأ',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.red[300]),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 ElevatedButton.icon(
                   onPressed: () => provider.loadLawsuits(refresh: true),
                   icon: const Icon(Icons.refresh),
@@ -577,12 +565,12 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.archive_outlined, size: 80, color: Colors.grey[300]),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Text(
                   provider.hasActiveFilters ? 'لا توجد نتائج مطابقة' : 'الأرشيف فارغ',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   provider.hasActiveFilters
                       ? 'جرّب تغيير معايير البحث أو الفلترة'
@@ -590,7 +578,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                   style: TextStyle(color: Colors.grey[500], fontSize: 14),
                 ),
                 if (provider.hasActiveFilters) ...[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   TextButton.icon(
                     onPressed: _clearFilters,
                     icon: const Icon(Icons.filter_list_off),
@@ -616,18 +604,22 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
 
   Widget _buildListView(LawsuitProvider provider) {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    final bottomPadding = keyboardHeight > 0 ? 16.0 : 80.0;
+    final isKeyboardVisible = keyboardHeight > 0;
     
     return ListView.builder(
       controller: _scrollController,
-      padding: EdgeInsets.fromLTRB(12, 4, 12, bottomPadding),
-      shrinkWrap: false,
+      padding: EdgeInsets.fromLTRB(
+        3, 
+        1, 
+        1, 
+        isKeyboardVisible ? 0 : 30,
+      ),
       itemCount: provider.lawsuits.length + (provider.isLoading ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == provider.lawsuits.length) {
           return const Center(
             child: Padding(
-              padding: EdgeInsets.all(16),
+              padding: EdgeInsets.all(6),
               child: CircularProgressIndicator(color: Color(0xFFE91E63)),
             ),
           );
@@ -642,16 +634,20 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
 
   Widget _buildGridView(LawsuitProvider provider) {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    final bottomPadding = keyboardHeight > 0 ? 16.0 : 80.0;
+    final isKeyboardVisible = keyboardHeight > 0;
     
     return GridView.builder(
       controller: _scrollController,
-      padding: EdgeInsets.fromLTRB(12, 4, 12, bottomPadding),
-      shrinkWrap: false,
+      padding: EdgeInsets.fromLTRB(
+        4, 
+        1, 
+        4, 
+        isKeyboardVisible ? 0 : 30,
+      ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
+        mainAxisSpacing: 4,
+        crossAxisSpacing: 4,
         childAspectRatio: 0.85,
       ),
       itemCount: provider.lawsuits.length + (provider.isLoading ? 1 : 0),
@@ -686,7 +682,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
               textAlign: TextAlign.right,
             ),
             if (!isArchived) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               TextField(
                 controller: reasonController,
                 textDirection: ui.TextDirection.rtl,
