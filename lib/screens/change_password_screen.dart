@@ -75,20 +75,66 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       if (mounted) {
         String errorMessage = 'خطأ في تغيير كلمة المرور';
         final errorStr = e.toString();
+        IconData errorIcon = Icons.error_outline;
+        Color errorColor = Colors.red;
         
         if (errorStr.contains('كلمة المرور الحالية غير صحيحة') || 
-            errorStr.contains('Current password is incorrect')) {
-          errorMessage = 'كلمة المرور الحالية غير صحيحة';
+            errorStr.contains('Current password is incorrect') ||
+            errorStr.contains('current_password')) {
+          errorMessage = 'كلمة المرور الحالية غير صحيحة\nيرجى إدخال كلمة المرور الصحيحة';
+          errorIcon = Icons.lock_outline;
+        } else if (errorStr.contains('password') && 
+                   (errorStr.contains('too short') || errorStr.contains('too common'))) {
+          errorMessage = 'كلمة المرور الجديدة ضعيفة\nيرجى اختيار كلمة مرور أقوى';
+          errorIcon = Icons.lock_outline;
+        } else if (errorStr.contains('SocketException') || 
+                   errorStr.contains('Failed host lookup') ||
+                   errorStr.contains('Network is unreachable')) {
+          errorMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('TimeoutException') || 
+                   errorStr.contains('timeout')) {
+          errorMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
         } else if (errorStr.contains('Network') || errorStr.contains('Connection')) {
-          errorMessage = 'خطأ في الاتصال بالخادم';
+          errorMessage = 'لا يمكن الاتصال بالخادم\nيرجى التحقق من اتصال الإنترنت';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
         } else {
-          errorMessage = errorStr.replaceAll('Exception: ', '');
+          String cleanError = errorStr.replaceAll('Exception: ', '');
+          if (cleanError.length > 100) {
+            errorMessage = 'خطأ في تغيير كلمة المرور\nيرجى المحاولة مرة أخرى';
+          } else {
+            errorMessage = cleanError;
+          }
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(errorIcon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    errorMessage,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'حسناً',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }

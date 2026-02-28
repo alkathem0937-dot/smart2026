@@ -72,7 +72,7 @@ dependencies:
   webview_flutter: ^4.4.2
   
   # File picker for attachments
-  file_picker: ^6.1.1
+  file_picker: ^8.1.2
   
   # Image picker (commented out - will add when needed)
   # Image picker (commented out - will add when needed)

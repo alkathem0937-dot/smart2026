@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:hijri/hijri.dart';
+import 'package:hijri/hijri_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
@@ -270,11 +270,48 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         // Only show error if lists are empty (initial load failed)
         // If we have local data, the error might be from a background sync
         if (_plaintiffs.isEmpty && _defendants.isEmpty) {
+          final errorStr = errorMessage.toLowerCase();
+          IconData errorIcon = Icons.error_outline;
+          Color errorColor = Colors.red;
+          String displayMessage = 'خطأ في تحميل الأطراف';
+          
+          if (errorStr.contains('socket') || 
+              errorStr.contains('network') ||
+              errorStr.contains('connection')) {
+            displayMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت';
+            errorIcon = Icons.wifi_off;
+            errorColor = Colors.orange.shade700;
+          } else if (errorStr.contains('timeout')) {
+            displayMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
+            errorIcon = Icons.wifi_off;
+            errorColor = Colors.orange.shade700;
+          } else {
+            displayMessage = 'خطأ في تحميل الأطراف\n$errorMessage';
+            if (displayMessage.length > 150) {
+              displayMessage = 'خطأ في تحميل الأطراف\nيرجى المحاولة مرة أخرى';
+            }
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('خطأ في تحميل الأطراف: $errorMessage'),
-              backgroundColor: Colors.red,
+              content: Row(
+                children: [
+                  Icon(errorIcon, color: Colors.white, size: 24),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      displayMessage,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: errorColor,
               duration: const Duration(seconds: 5),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
               action: SnackBarAction(
                 label: 'إعادة المحاولة',
                 textColor: Colors.white,
@@ -325,10 +362,52 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     } catch (e) {
       developer.log('Error loading templates: $e', name: 'LawsuitDetailScreen');
       if (mounted) {
+        final errorStr = e.toString().toLowerCase();
+        String errorMessage = 'خطأ في تحميل النصوص القانونية';
+        IconData errorIcon = Icons.warning_amber_rounded;
+        Color errorColor = Colors.orange.shade700;
+        
+        if (errorStr.contains('socket') || 
+            errorStr.contains('network') ||
+            errorStr.contains('connection')) {
+          errorMessage = 'لا يوجد اتصال بالإنترنت\nلا يمكن تحميل النصوص القانونية';
+          errorIcon = Icons.wifi_off;
+        } else if (errorStr.contains('timeout')) {
+          errorMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+        } else {
+          String cleanError = e.toString().replaceAll('Exception: ', '');
+          if (cleanError.length > 100) {
+            errorMessage = 'خطأ في تحميل النصوص القانونية\nيرجى المحاولة مرة أخرى';
+          } else {
+            errorMessage = 'خطأ في تحميل النصوص القانونية: $cleanError';
+          }
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('خطأ في تحميل النصوص القانونية: ${e.toString()}'),
-            backgroundColor: Colors.orange,
+            content: Row(
+              children: [
+                Icon(errorIcon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    errorMessage,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'حسناً',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }
@@ -408,10 +487,49 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
           ),
         );
       } else if (mounted) {
+        final errorMessage = provider.errorMessage ?? 'حدث خطأ في تحديث الدعوى';
+        final errorStr = errorMessage.toLowerCase();
+        IconData errorIcon = Icons.error_outline;
+        Color errorColor = Colors.red;
+        String displayMessage = errorMessage;
+        
+        if (errorStr.contains('لا يوجد اتصال') || 
+            errorStr.contains('network') ||
+            errorStr.contains('connection')) {
+          displayMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('انتهت مهلة') || 
+                   errorStr.contains('timeout')) {
+          displayMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(provider.errorMessage ?? 'حدث خطأ'),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(errorIcon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    displayMessage,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'حسناً',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }
@@ -435,10 +553,53 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         );
       } else if (mounted) {
         Navigator.pop(context);
+        final errorMessage = provider.errorMessage ?? 'حدث خطأ في إنشاء الدعوى';
+        final errorStr = errorMessage.toLowerCase();
+        IconData errorIcon = Icons.error_outline;
+        Color errorColor = Colors.red;
+        String displayMessage = errorMessage;
+        
+        if (errorStr.contains('لا يوجد اتصال') || 
+            errorStr.contains('network') ||
+            errorStr.contains('connection')) {
+          displayMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('انتهت مهلة') || 
+                   errorStr.contains('timeout')) {
+          displayMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('400') || 
+                   errorStr.contains('bad request')) {
+          displayMessage = 'البيانات المدخلة غير صحيحة\nيرجى التحقق من جميع الحقول';
+          errorIcon = Icons.warning_amber_rounded;
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(provider.errorMessage ?? 'حدث خطأ في إنشاء الدعوى'),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(errorIcon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    displayMessage,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'حسناً',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }
@@ -1353,7 +1514,9 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         } else if (response['data'] != null && response['data'] is Map) {
           attachmentsData = (response['data'] as Map<String, dynamic>)['results'] as List?;
         } else if (response is List) {
-          attachmentsData = response;
+          attachmentsData = response as List<dynamic>;
+        } else {
+          attachmentsData = null;
         }
         
         setState(() {

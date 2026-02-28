@@ -157,15 +157,22 @@ class ApiService {
         print('✅ [API] Request successful');
         return responseData;
       } else if (response.statusCode == 401) {
-        // Token expired, try to refresh
-        if (_refreshToken != null) {
+        // Token expired, try to refresh (only for non-login requests)
+        if (_refreshToken != null && endpoint != ApiConfig.loginEndpoint) {
           final refreshed = await refreshAccessToken();
           if (refreshed) {
             // Retry the request
             return _makeRequest(method, endpoint, body: body, files: files);
           }
         }
-        throw Exception('Unauthorized: ${responseData['detail'] ?? 'Invalid credentials'}');
+        // For login endpoint, return a clear error message
+        final detail = responseData['detail']?.toString() ?? '';
+        if (detail.contains('No active account') || 
+            detail.contains('Unable to log in') ||
+            detail.isEmpty) {
+          throw Exception('Invalid credentials');
+        }
+        throw Exception('Unauthorized: $detail');
       } else {
         // Better error handling for validation errors
         String errorMessage = 'Request failed';
@@ -271,7 +278,17 @@ class ApiService {
         // Don't retry on authentication errors (401, 400 with invalid credentials)
         if (e.toString().contains('Unauthorized') || 
             e.toString().contains('Invalid credentials') ||
-            e.toString().contains('Unable to log in')) {
+            e.toString().contains('Unable to log in') ||
+            e.toString().contains('No active account found') ||
+            e.toString().contains('Invalid username/password') ||
+            e.toString().contains('401') ||
+            e.toString().contains('اسم المستخدم') ||
+            e.toString().contains('كلمة المرور')) {
+          rethrow;
+        }
+        
+        // Don't retry on network errors in last attempt
+        if (attempts >= ApiConfig.maxRetries) {
           rethrow;
         }
         
@@ -287,7 +304,7 @@ class ApiService {
     if (lastException != null) {
       throw lastException;
     }
-    throw Exception('Failed to connect to server after ${ApiConfig.maxRetries} attempts');
+    throw Exception('فشل الاتصال بالخادم بعد ${ApiConfig.maxRetries} محاولة. يرجى التحقق من اتصال الإنترنت');
   }
 
   // Update user profile

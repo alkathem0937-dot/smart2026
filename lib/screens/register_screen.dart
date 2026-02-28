@@ -78,35 +78,80 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // Extract error message
         String errorMessage = 'خطأ في التسجيل';
         final errorStr = e.toString();
+        IconData errorIcon = Icons.error_outline;
+        Color errorColor = Colors.red;
         
         // Check for specific error messages
-        if (errorStr.contains('اسم المستخدم موجود بالفعل')) {
-          errorMessage = 'اسم المستخدم موجود بالفعل. يرجى اختيار اسم آخر';
-        } else if (errorStr.contains('البريد الإلكتروني موجود بالفعل')) {
-          errorMessage = 'البريد الإلكتروني موجود بالفعل. يرجى استخدام بريد آخر';
-        } else if (errorStr.contains('الرقم الوطني موجود بالفعل')) {
-          errorMessage = 'الرقم الوطني موجود بالفعل';
-        } else if (errorStr.contains('Network error') || errorStr.contains('Connection')) {
-          errorMessage = 'خطأ في الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت';
+        if (errorStr.contains('اسم المستخدم موجود بالفعل') || 
+            errorStr.contains('username') && errorStr.contains('already exists')) {
+          errorMessage = 'اسم المستخدم موجود بالفعل\nيرجى اختيار اسم آخر';
+          errorIcon = Icons.person_off;
+        } else if (errorStr.contains('البريد الإلكتروني موجود بالفعل') || 
+                   errorStr.contains('email') && errorStr.contains('already exists')) {
+          errorMessage = 'البريد الإلكتروني موجود بالفعل\nيرجى استخدام بريد آخر';
+          errorIcon = Icons.email;
+        } else if (errorStr.contains('الرقم الوطني موجود بالفعل') ||
+                   errorStr.contains('national_id') && errorStr.contains('already exists')) {
+          errorMessage = 'الرقم الوطني موجود بالفعل\nيرجى التحقق من الرقم المدخل';
+          errorIcon = Icons.badge;
+        } else if (errorStr.contains('SocketException') || 
+                   errorStr.contains('Failed host lookup') ||
+                   errorStr.contains('Network is unreachable')) {
+          errorMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('TimeoutException') || 
+                   errorStr.contains('timeout')) {
+          errorMessage = 'انتهت مهلة الاتصال\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('Connection refused') ||
+                   errorStr.contains('Network error') || 
+                   errorStr.contains('Connection')) {
+          errorMessage = 'لا يمكن الاتصال بالخادم\nيرجى التحقق من اتصال الإنترنت والمحاولة لاحقاً';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('400') || 
+                   errorStr.contains('Bad Request')) {
+          errorMessage = 'بيانات التسجيل غير صحيحة\nيرجى التحقق من جميع الحقول المدخلة';
+          errorIcon = Icons.warning_amber_rounded;
         } else if (errorStr.contains('Request failed')) {
           // Try to extract the actual error from the exception
           final match = RegExp(r'Exception: (.+)').firstMatch(errorStr);
           if (match != null) {
             errorMessage = match.group(1) ?? 'خطأ في التسجيل';
           } else {
-            errorMessage = 'خطأ في التسجيل. يرجى التحقق من البيانات المدخلة';
+            errorMessage = 'خطأ في التسجيل\nيرجى التحقق من البيانات المدخلة';
           }
         } else {
           errorMessage = errorStr.replaceAll('Exception: ', '');
+          if (errorMessage.length > 100) {
+            errorMessage = 'خطأ في التسجيل\nيرجى التحقق من البيانات المدخلة';
+          }
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(errorIcon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    errorMessage,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: errorColor,
             duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
             action: SnackBarAction(
-              label: 'إغلاق',
+              label: 'حسناً',
               textColor: Colors.white,
               onPressed: () {},
             ),

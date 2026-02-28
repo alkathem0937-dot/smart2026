@@ -53,8 +53,57 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       developer.log('Error loading profile: $e', name: 'EditProfileScreen');
       if (mounted) {
+        final errorStr = e.toString();
+        String errorMessage = 'خطأ في تحميل الملف الشخصي';
+        IconData errorIcon = Icons.error_outline;
+        Color errorColor = Colors.red;
+        
+        if (errorStr.contains('SocketException') || 
+            errorStr.contains('Failed host lookup') ||
+            errorStr.contains('Network is unreachable')) {
+          errorMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('TimeoutException') || 
+                   errorStr.contains('timeout')) {
+          errorMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('404') || 
+                   errorStr.contains('not found')) {
+          errorMessage = 'الملف الشخصي غير موجود';
+          errorIcon = Icons.person_off;
+        } else if (errorStr.contains('401') || 
+                   errorStr.contains('Unauthorized')) {
+          errorMessage = 'غير مصرح بالوصول\nيرجى تسجيل الدخول مرة أخرى';
+          errorIcon = Icons.lock_outline;
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ في تحميل الملف الشخصي: ${e.toString()}')),
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(errorIcon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    errorMessage,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'حسناً',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
         );
       }
     } finally {
@@ -104,19 +153,64 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         String errorMessage = 'خطأ في حفظ الملف الشخصي';
         final errorStr = e.toString();
+        IconData errorIcon = Icons.error_outline;
+        Color errorColor = Colors.red;
         
         if (errorStr.contains('email') || errorStr.contains('البريد')) {
-          errorMessage = 'البريد الإلكتروني غير صحيح أو موجود بالفعل';
+          errorMessage = 'البريد الإلكتروني غير صحيح أو موجود بالفعل\nيرجى استخدام بريد آخر';
+          errorIcon = Icons.email;
+        } else if (errorStr.contains('SocketException') || 
+                   errorStr.contains('Failed host lookup') ||
+                   errorStr.contains('Network is unreachable')) {
+          errorMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('TimeoutException') || 
+                   errorStr.contains('timeout')) {
+          errorMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
         } else if (errorStr.contains('Network') || errorStr.contains('Connection')) {
-          errorMessage = 'خطأ في الاتصال بالخادم';
+          errorMessage = 'لا يمكن الاتصال بالخادم\nيرجى التحقق من اتصال الإنترنت';
+          errorIcon = Icons.wifi_off;
+          errorColor = Colors.orange.shade700;
+        } else if (errorStr.contains('400') || 
+                   errorStr.contains('Bad Request')) {
+          errorMessage = 'البيانات المدخلة غير صحيحة\nيرجى التحقق من جميع الحقول';
+          errorIcon = Icons.warning_amber_rounded;
         } else {
-          errorMessage = errorStr.replaceAll('Exception: ', '').replaceAll('Failed to update profile: ', '');
+          String cleanError = errorStr.replaceAll('Exception: ', '').replaceAll('Failed to update profile: ', '');
+          if (cleanError.length > 100) {
+            errorMessage = 'خطأ في حفظ الملف الشخصي\nيرجى المحاولة مرة أخرى';
+          } else {
+            errorMessage = cleanError;
+          }
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(errorIcon, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    errorMessage,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: errorColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            action: SnackBarAction(
+              label: 'حسناً',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
             duration: const Duration(seconds: 4),
           ),
         );

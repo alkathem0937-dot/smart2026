@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'dart:developer' as developer;
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../models/user_model.dart';
@@ -148,7 +149,62 @@ class AuthProvider with ChangeNotifier {
       return true;
     } catch (e) {
       _currentUser = null;
-      _errorMessage = 'خطأ في تسجيل الدخول: ${e.toString()}';
+      
+      // تحسين رسائل الخطأ بناءً على نوع الخطأ
+      String errorMsg = e.toString();
+      
+      // أخطاء الاتصال/الإنترنت
+      if (e is SocketException || 
+          errorMsg.contains('SocketException') || 
+          errorMsg.contains('Failed host lookup') ||
+          errorMsg.contains('Network is unreachable')) {
+        _errorMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+      } 
+      // أخطاء انتهاء المهلة
+      else if (errorMsg.contains('TimeoutException') || 
+               errorMsg.contains('timeout') ||
+               errorMsg.contains('Connection timed out')) {
+        _errorMessage = 'انتهت مهلة الاتصال\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+      }
+      // أخطاء رفض الاتصال
+      else if (errorMsg.contains('Connection refused') ||
+               errorMsg.contains('Unable to connect')) {
+        _errorMessage = 'لا يمكن الاتصال بالخادم\nيرجى التحقق من اتصال الإنترنت والمحاولة لاحقاً';
+      }
+      // أخطاء المصادقة (اسم المستخدم/كلمة المرور)
+      else if (errorMsg.contains('401') || 
+               errorMsg.contains('Unauthorized') ||
+               errorMsg.contains('Invalid credentials') ||
+               errorMsg.contains('Unable to log in') ||
+               errorMsg.contains('No active account found') ||
+               errorMsg.contains('Invalid username/password')) {
+        _errorMessage = 'اسم المستخدم أو كلمة المرور غير صحيحة\nيرجى التحقق من البيانات والمحاولة مرة أخرى';
+      }
+      // أخطاء 400 (Bad Request)
+      else if (errorMsg.contains('400') || 
+               errorMsg.contains('Bad Request')) {
+        _errorMessage = 'بيانات الدخول غير صحيحة\nيرجى التحقق من اسم المستخدم وكلمة المرور';
+      }
+      // أخطاء 404
+      else if (errorMsg.contains('404') || 
+               errorMsg.contains('Not found')) {
+        _errorMessage = 'الخدمة غير متاحة حالياً\nيرجى المحاولة لاحقاً';
+      }
+      // أخطاء 500 (Server Error)
+      else if (errorMsg.contains('500') || 
+               errorMsg.contains('Internal Server Error')) {
+        _errorMessage = 'خطأ في الخادم\nيرجى المحاولة لاحقاً أو الاتصال بالدعم الفني';
+      }
+      // أخطاء أخرى
+      else {
+        // إزالة التفاصيل التقنية من رسالة الخطأ
+        String cleanError = errorMsg;
+        if (cleanError.contains('Exception: ')) {
+          cleanError = cleanError.replaceFirst('Exception: ', '');
+        }
+        _errorMessage = 'حدث خطأ أثناء تسجيل الدخول\n$cleanError';
+      }
+      
       _isLoading = false;
       notifyListeners();
       return false;

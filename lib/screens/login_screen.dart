@@ -69,10 +69,52 @@ class _LoginScreenState extends State<LoginScreen> {
       // Navigate to Home Screen
       Navigator.pushReplacementNamed(context, '/home');
     } else if (mounted) {
+      // تحديد نوع الخطأ وعرض رسالة مناسبة
+      final errorMessage = authProvider.errorMessage ?? 'فشل تسجيل الدخول';
+      final isNetworkError = errorMessage.contains('لا يوجد اتصال') || 
+                            errorMessage.contains('انتهت مهلة') ||
+                            errorMessage.contains('لا يمكن الاتصال');
+      final isAuthError = errorMessage.contains('اسم المستخدم') || 
+                         errorMessage.contains('كلمة المرور') ||
+                         errorMessage.contains('غير صحيحة');
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authProvider.errorMessage ?? 'فشل تسجيل الدخول'),
-          backgroundColor: Colors.red,
+          content: Row(
+            children: [
+              Icon(
+                isNetworkError 
+                    ? Icons.wifi_off 
+                    : isAuthError 
+                        ? Icons.error_outline 
+                        : Icons.warning_amber_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  errorMessage,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: isNetworkError 
+              ? Colors.orange.shade700 
+              : isAuthError 
+                  ? Colors.red.shade700 
+                  : Colors.red,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          action: SnackBarAction(
+            label: 'حسناً',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
         ),
       );
     }
