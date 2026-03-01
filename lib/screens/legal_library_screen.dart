@@ -180,6 +180,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('المكتبة القانونية', style: TextStyle(fontFamily: 'Cairo')),
         backgroundColor: const Color(0xFF1A237E),
@@ -198,181 +199,191 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A237E),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Search Bar
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Detect keyboard by available height (compact when < 400)
+          final isCompact = constraints.maxHeight < 400;
+
+          return Column(
+            children: [
+              // Search Header
+              Container(
+                padding: EdgeInsets.fromLTRB(16, isCompact ? 8 : 16, 16, isCompact ? 8 : 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A237E),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(24),
+                    bottomRight: Radius.circular(24),
                   ),
-                  child: TextField(
-                    controller: _searchController,
-                    textDirection: TextDirection.rtl,
-                    decoration: InputDecoration(
-                      hintText: 'ابحث في نص المادة أو رقمها...',
-                      hintStyle: const TextStyle(fontFamily: 'Cairo', color: Colors.grey),
-                      prefixIcon: const Icon(Icons.search, color: Color(0xFF1A237E)),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                _searchArticles();
-                              },
-                            )
-                          : IconButton(
-                              icon: const Icon(Icons.search, color: Color(0xFF1A237E)),
-                              onPressed: () => _searchArticles(),
-                            ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    ),
-                    onSubmitted: (_) => _searchArticles(),
-                    onChanged: (value) {
-                      // Trigger rebuild to show/hide clear button
-                      setState(() {});
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Search Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _searchArticles(),
-                    icon: const Icon(Icons.search),
-                    label: const Text('بحث', style: TextStyle(fontFamily: 'Cairo', fontSize: 16)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFE91E63),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Browser Options
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _showSourcesBrowser(context),
-                        icon: const Icon(Icons.account_balance), // More appropriate for 'Sources'
-                        label: const Text('تصفح المصادر القانونية', style: TextStyle(fontFamily: 'Cairo')),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
+                  boxShadow: isCompact ? null : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                // Active Filters
-                if (_selectedSource != null || _selectedBook != null || _selectedChapter != null)
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        if (_selectedSource != null)
-                          _buildFilterChip(_selectedSource!, () {
-                            setState(() => _selectedSource = null);
-                            _searchArticles();
-                          }),
-                        if (_selectedBook != null)
-                          _buildFilterChip(_selectedBook!, () {
-                            setState(() => _selectedBook = null);
-                            _searchArticles();
-                          }),
-                        if (_selectedChapter != null)
-                          _buildFilterChip(_selectedChapter!, () {
-                            setState(() => _selectedChapter = null);
-                            _searchArticles();
-                          }),
-                        const SizedBox(width: 8),
-                        TextButton.icon(
-                          onPressed: _clearFilters,
-                          icon: const Icon(Icons.clear_all, color: Colors.white70, size: 18),
-                          label: const Text('مسح الكل', style: TextStyle(color: Colors.white70, fontFamily: 'Cairo')),
-                        ),
-                      ],
-                    ),
-                  ),
-                // Results Count
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'عدد النتائج: $_totalCount مادة',
-                    style: const TextStyle(color: Colors.white70, fontFamily: 'Cairo'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          // Results List
-          Expanded(
-            child: _isLoading && _articles.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : _articles.isEmpty
-                    ? _buildEmptyState()
-                    : NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          if (notification is ScrollEndNotification &&
-                              notification.metrics.extentAfter < 200 &&
-                              _hasMore &&
-                              !_isLoading) {
-                            _searchArticles(loadMore: true);
-                          }
-                          return false;
-                        },
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _articles.length + (_hasMore ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index >= _articles.length) {
-                              return const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: CircularProgressIndicator(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Search Bar - always visible
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: TextField(
+                        controller: _searchController,
+                        textDirection: TextDirection.rtl,
+                        decoration: InputDecoration(
+                          hintText: 'ابحث في نص المادة أو رقمها...',
+                          hintStyle: const TextStyle(fontFamily: 'Cairo', color: Colors.grey),
+                          prefixIcon: const Icon(Icons.search, color: Color(0xFF1A237E)),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _searchArticles();
+                                  },
+                                )
+                              : IconButton(
+                                  icon: const Icon(Icons.search, color: Color(0xFF1A237E)),
+                                  onPressed: () => _searchArticles(),
                                 ),
-                              );
-                            }
-                            return _buildArticleCard(_articles[index]);
-                          },
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                        onSubmitted: (_) => _searchArticles(),
+                        onChanged: (value) {
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    // Hide extra elements when keyboard is visible (compact mode)
+                    if (!isCompact) ...[
+                      const SizedBox(height: 8),
+                      // Search Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _searchArticles(),
+                          icon: const Icon(Icons.search),
+                          label: const Text('بحث', style: TextStyle(fontFamily: 'Cairo', fontSize: 16)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE91E63),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
                       ),
-          ),
-        ],
+                      const SizedBox(height: 12),
+                      // Browser Options
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showSourcesBrowser(context),
+                              icon: const Icon(Icons.account_balance),
+                              label: const Text('تصفح المصادر القانونية', style: TextStyle(fontFamily: 'Cairo')),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white54),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Active Filters
+                      if (_selectedSource != null || _selectedBook != null || _selectedChapter != null)
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              if (_selectedSource != null)
+                                _buildFilterChip(_selectedSource!, () {
+                                  setState(() => _selectedSource = null);
+                                  _searchArticles();
+                                }),
+                              if (_selectedBook != null)
+                                _buildFilterChip(_selectedBook!, () {
+                                  setState(() => _selectedBook = null);
+                                  _searchArticles();
+                                }),
+                              if (_selectedChapter != null)
+                                _buildFilterChip(_selectedChapter!, () {
+                                  setState(() => _selectedChapter = null);
+                                  _searchArticles();
+                                }),
+                              const SizedBox(width: 8),
+                              TextButton.icon(
+                                onPressed: _clearFilters,
+                                icon: const Icon(Icons.clear_all, color: Colors.white70, size: 18),
+                                label: const Text('مسح الكل', style: TextStyle(color: Colors.white70, fontFamily: 'Cairo')),
+                              ),
+                            ],
+                          ),
+                        ),
+                      // Results Count
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'عدد النتائج: $_totalCount مادة',
+                          style: const TextStyle(color: Colors.white70, fontFamily: 'Cairo'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              
+              // Results List
+              Expanded(
+                child: _isLoading && _articles.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : _articles.isEmpty
+                        ? _buildEmptyState()
+                        : NotificationListener<ScrollNotification>(
+                            onNotification: (notification) {
+                              if (notification is ScrollEndNotification &&
+                                  notification.metrics.extentAfter < 200 &&
+                                  _hasMore &&
+                                  !_isLoading) {
+                                _searchArticles(loadMore: true);
+                              }
+                              return false;
+                            },
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _articles.length + (_hasMore ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (index >= _articles.length) {
+                                  return const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+                                }
+                                return _buildArticleCard(_articles[index]);
+                              },
+                            ),
+                          ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
