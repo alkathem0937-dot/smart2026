@@ -394,11 +394,20 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
       child: Chip(
         label: Text(
           label.length > 20 ? '${label.substring(0, 20)}...' : label,
-          style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Cairo'),
+          style: const TextStyle(
+            color: Color(0xFF1A237E),
+            fontSize: 12,
+            fontFamily: 'Cairo',
+            fontWeight: FontWeight.w600,
+          ),
         ),
-        backgroundColor: Colors.white24,
-        deleteIcon: const Icon(Icons.close, size: 16, color: Colors.white),
+        backgroundColor: Colors.white,
+        side: BorderSide(color: const Color(0xFFE91E63).withOpacity(0.3), width: 1.5),
+        deleteIcon: const Icon(Icons.close, size: 18, color: Color(0xFFE91E63)),
         onDeleted: onRemove,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        elevation: 2,
       ),
     );
   }
