@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'laws',
     'logs',
     'audit',
+    'ai_assistant',
 ]
 
 MIDDLEWARE = [

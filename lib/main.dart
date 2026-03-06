@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
 import 'providers/lawsuit_provider.dart';
+import 'providers/ai_chat_provider.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -73,6 +74,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider(apiService: apiService)..initialize()),
         ChangeNotifierProvider(create: (_) => LawsuitProvider(apiService: apiService)),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..initialize()),
+        ChangeNotifierProvider(create: (_) => AIChatProvider()),
         ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
           create: (_) => NotificationProvider(apiService),
           update: (_, auth, prev) => NotificationProvider(apiService),

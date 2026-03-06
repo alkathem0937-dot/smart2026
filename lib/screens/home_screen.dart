@@ -13,6 +13,7 @@ import 'daily_sessions_screen.dart';
 import 'calendar_screen.dart';
 import 'legal_library_screen.dart';
 import 'services_screen.dart';
+import 'ai_case_analysis_screen.dart';
 
 /// Home Screen - Dashboard based on user role
 class HomeScreen extends StatefulWidget {
@@ -823,6 +824,17 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.pop(context);
                 Navigator.pushNamed(context, '/smart-assistant');
+              },
+            ),
+            _buildDrawerItem(
+              icon: Icons.analytics_outlined,
+              label: 'تحليل القضايا بالذكاء الاصطناعي',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AICaseAnalysisScreen()),
+                );
               },
             ),
             _buildDrawerItem(

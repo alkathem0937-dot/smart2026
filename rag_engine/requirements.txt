@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+langchain
+langchain-community
+chromadb
+sentence-transformers
+pytesseract
+pdf2image
+python-multipart
+python-dotenv
+loguru

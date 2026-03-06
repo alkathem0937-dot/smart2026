@@ -53,6 +53,11 @@ class ApiConfig {
   static const String legalTemplatesEndpoint = '/api/legal-templates/';
   static const String financialClaimsEndpoint = '/api/financial-claims/';
   
+  // AI Assistant endpoints (المساعد الذكي)
+  static const String aiChatEndpoint = '/api/ai/chat/';
+  static const String aiDocumentsAddEndpoint = '/api/ai/documents/add/';
+  static const String aiDocumentsDeleteEndpoint = '/api/ai/documents/delete/';
+  
   // Timeout duration
   static const Duration timeout = Duration(seconds: 60);
   

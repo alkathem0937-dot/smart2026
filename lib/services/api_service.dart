@@ -21,6 +21,9 @@ class ApiService {
     _refreshToken = null;
   }
 
+  // Get access token (for other services)
+  String? get accessToken => _accessToken;
+
   // Get authorization header
   Map<String, String> get _headers {
     final headers = {

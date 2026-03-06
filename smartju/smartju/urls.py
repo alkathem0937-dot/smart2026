@@ -173,6 +173,9 @@ def home_view(request):
                 'user_sessions': '/api/user-sessions/',
                 'search_logs': '/api/search-logs/',
                 'ai_chat_logs': '/api/ai-chat-logs/',
+                'ai_chat': '/api/ai/chat/',
+                'ai_documents_add': '/api/ai/documents/add/',
+                'ai_documents_delete': '/api/ai/documents/delete/',
             }
         },
         'documentation': 'Visit /swagger/ for interactive API documentation',
@@ -195,6 +198,9 @@ urlpatterns = [
     
     # User Registration
     path('api/register/', include('accounts.urls')),
+    
+    # AI Assistant (المساعد الذكي)
+    path('api/ai/', include('ai_assistant.urls')),
     
     # Swagger/OpenAPI Documentation
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

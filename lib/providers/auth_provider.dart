@@ -20,6 +20,9 @@ class AuthProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _currentUser != null;
+  
+  // Get access token for other services
+  String? get accessToken => _apiService.accessToken;
 
   // Initialize - check if user is already logged in
   Future<void> initialize() async {
