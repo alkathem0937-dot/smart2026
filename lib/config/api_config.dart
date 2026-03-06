@@ -5,7 +5,7 @@ class ApiConfig {
   // For iOS Simulator: use localhost
   // For physical device: use your computer's IP address
   // Production URL (Render)
-  static const String baseUrl = 'https://smartjudi.onrender.com';
+  static const String baseUrl = 'https://smartjudi-nls1.onrender.com';
   
   // Development URLs (uncomment to use):
   // static const String baseUrl = 'http://192.168.0.147:8000'; // Local Network
