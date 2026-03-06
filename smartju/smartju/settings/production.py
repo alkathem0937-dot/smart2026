@@ -9,9 +9,15 @@ import dj_database_url
 DEBUG = False
 
 # Update allowed hosts from environment variable
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
-if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['']:
+ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', '')
+if ALLOWED_HOSTS_STR:
+    ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
+else:
     ALLOWED_HOSTS = ['*']  # Fallback for initial setup
+
+# Add Render internal host for health checks
+ALLOWED_HOSTS.append('smartjudi-nls1.onrender.com')
+ALLOWED_HOSTS.append('*.onrender.com')
 
 # Database - use Render's DATABASE_URL
 DATABASES = {
@@ -28,7 +34,8 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'  # noqa
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Security settings
-SECURE_SSL_REDIRECT = True
+# Disable SSL redirect for health checks (Render handles SSL)
+SECURE_SSL_REDIRECT = False  # Render handles SSL termination
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_BROWSER_XSS_FILTER = True

@@ -127,6 +127,12 @@ schema_view = get_schema_view(
     permission_classes=[],  # Allow access to schema without authentication
 )
 
+# Health check view (for Render)
+@require_http_methods(["GET", "HEAD"])
+def health_check(request):
+    """Health check endpoint for Render"""
+    return JsonResponse({'status': 'ok'}, status=200)
+
 # Home page view
 @require_http_methods(["GET"])
 def home_view(request):
@@ -183,6 +189,8 @@ def home_view(request):
 
 
 urlpatterns = [
+    # Health check (for Render)
+    path('health/', health_check, name='health'),
     # Home page
     path('', home_view, name='home'),
     
