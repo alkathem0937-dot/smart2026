@@ -1,0 +1,28 @@
+databases:
+  - name: smartjudi
+    databaseName: smartjudi
+    user: jood
+
+services:
+  - type: web
+    name: smartjudi
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "cd smartju && gunicorn smartju.wsgi:application --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DJANGO_SETTINGS_MODULE
+        value: smartju.settings.production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smartjudi
+          property: connectionString
+      - key: ALLOWED_HOSTS
+        value: smartjudi-nls1.onrender.com,*.onrender.com
+      - key: GROQ_API_KEY
+        value: your_groq_api_key_here
+      - key: GROQ_MODEL_NAME
+        value: qwen2.5-7b-instruct
