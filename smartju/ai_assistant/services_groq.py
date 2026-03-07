@@ -154,7 +154,18 @@ class AIAssistantServiceGroq:
     """خدمة المساعد الذكي التي تجمع بين RAG و Groq/HuggingFace"""
 
     def __init__(self, use_groq: bool = True):
-        self.rag_service = RAGService()
+        # محاولة تهيئة RAG Service (اختياري)
+        self.rag_service = None
+        try:
+            rag_api_url = os.getenv("RAG_API_URL")
+            if rag_api_url and rag_api_url != "https://your-rag-space.hf.space":
+                self.rag_service = RAGService()
+                logger.info("RAG Service initialized successfully")
+            else:
+                logger.warning("RAG_API_URL not set or is placeholder, proceeding without RAG")
+        except (ValueError, Exception) as e:
+            logger.warning(f"RAG Service not available, proceeding without RAG: {e}")
+            self.rag_service = None
         
         # اختيار الخدمة حسب الإعدادات
         if use_groq:
@@ -241,14 +252,17 @@ class AIAssistantServiceGroq:
 
         rag_context = ""
         search_results = []
-        try:
-            search_results = self.rag_service.search(user_query, k=5)
-            rag_context = self._format_rag_context(search_results)
-            logger.info(f"RAG search successful. Context length: {len(rag_context)} characters.")
-        except ConnectionError as e:
-            logger.warning(f"RAG service unavailable, proceeding without RAG context: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error during RAG search: {e}")
+        if self.rag_service is not None:
+            try:
+                search_results = self.rag_service.search(user_query, k=5)
+                rag_context = self._format_rag_context(search_results)
+                logger.info(f"RAG search successful. Context length: {len(rag_context)} characters.")
+            except ConnectionError as e:
+                logger.warning(f"RAG service unavailable, proceeding without RAG context: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error during RAG search: {e}")
+        else:
+            logger.info("RAG service not available, proceeding without RAG context")
 
         messages = self._build_messages(user_query, rag_context, conversation_history)
 
