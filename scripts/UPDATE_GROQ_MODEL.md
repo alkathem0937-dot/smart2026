@@ -25,8 +25,10 @@ The model llama-3.1-8b-instruct does not exist or you do not have access to it.
    
    **إلى:**
    ```
-   llama-3-8b-8192
+   llama-3.3-70b-versatile
    ```
+   
+   ⭐ **موصى به - تم اختباره ويعمل بشكل ممتاز**
 
 4. **احفظ التغييرات**
 
@@ -36,17 +38,22 @@ The model llama-3.1-8b-instruct does not exist or you do not have access to it.
 
 ## نماذج بديلة (إذا لم يعمل `llama-3-8b-8192`):
 
-### الخيار 1: Mixtral (موصى به للسياق الطويل)
+### الخيار 1: Llama 3.3 70B Versatile (موصى به - تم اختباره) ⭐
+```
+GROQ_MODEL_NAME=llama-3.3-70b-versatile
+```
+
+### الخيار 2: Llama 3 8B (سريع)
+```
+GROQ_MODEL_NAME=llama-3-8b-8192
+```
+
+### الخيار 3: Mixtral (للسياق الطويل)
 ```
 GROQ_MODEL_NAME=mixtral-8x7b-32768
 ```
 
-### الخيار 2: Llama 3 70B (أفضل جودة)
-```
-GROQ_MODEL_NAME=llama-3-70b-8192
-```
-
-### الخيار 3: Gemma 2
+### الخيار 4: Gemma 2
 ```
 GROQ_MODEL_NAME=gemma2-9b-it
 ```
@@ -59,7 +66,7 @@ GROQ_MODEL_NAME=gemma2-9b-it
 
 1. اذهب إلى **Logs** في Render
 2. ابحث عن:
-   - ✅ `GroqService initialized with model: llama-3-8b-8192`
+   - ✅ `GroqService initialized with model: llama-3.3-70b-versatile`
    - ✅ لا يجب أن ترى أخطاء 404
    - ✅ يجب أن ترى استجابات ناجحة من Groq API
 
