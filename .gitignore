@@ -48,3 +48,6 @@ app.*.map.json
 /data
 data
 *.data
+
+# Import checkpoint files
+.import_checkpoint.json
