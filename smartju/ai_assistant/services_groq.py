@@ -18,7 +18,8 @@ class GroqService:
     def __init__(self):
         self.groq_api_key = os.getenv("GROQ_API_KEY")
         self.groq_api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.model_name = os.getenv("GROQ_MODEL_NAME", "qwen2.5-7b-instruct")  # أو "llama-3.1-8b-instruct"
+        # قائمة النماذج المتاحة: qwen2.5-7b-instruct, llama-3.1-8b-instruct, mixtral-8x7b-32768
+        self.model_name = os.getenv("GROQ_MODEL_NAME", "llama-3.1-8b-instruct")  # تغيير الافتراضي
         
         if not self.groq_api_key:
             raise ValueError("GROQ_API_KEY environment variable not set.")
@@ -30,21 +31,47 @@ class GroqService:
                 'Content-Type': 'application/json',
                 'Authorization': f'Bearer {self.groq_api_key}'
             }
+            
+            # Log request details (without sensitive data)
+            logger.info(f"Making request to Groq API: {self.groq_api_url}")
+            logger.info(f"Model: {payload.get('model', 'unknown')}")
+            
             response = requests.post(
                 self.groq_api_url,
                 headers=headers,
                 json=payload,
                 timeout=120
             )
-            response.raise_for_status()
+            
+            # Log response status
+            logger.info(f"Groq API response status: {response.status_code}")
+            
+            # If error, log full response for debugging
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"Groq API error {response.status_code}: {error_text}")
+                try:
+                    error_json = response.json()
+                    logger.error(f"Error JSON: {error_json}")
+                except:
+                    pass
+                response.raise_for_status()
+            
             return response.json()
         except requests.exceptions.Timeout:
             logger.error("Request to Groq timed out.")
             raise ConnectionError("Groq service timed out.")
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error from Groq: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
+            raise ConnectionError(f"Groq service failed: {e}")
         except requests.exceptions.RequestException as e:
             logger.error(f"Request to Groq failed: {e}")
-            if hasattr(e.response, 'text'):
-                logger.error(f"Response: {e.response.text}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
             raise ConnectionError(f"Groq service failed: {e}")
 
     def generate_response(self, messages: List[Dict[str, str]], stream: bool = False) -> Dict[str, Any]:
