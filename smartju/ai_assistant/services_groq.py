@@ -18,8 +18,12 @@ class GroqService:
     def __init__(self):
         self.groq_api_key = os.getenv("GROQ_API_KEY")
         self.groq_api_url = "https://api.groq.com/openai/v1/chat/completions"
-        # قائمة النماذج المتاحة: qwen2.5-7b-instruct, llama-3.1-8b-instruct, mixtral-8x7b-32768
+        # قائمة النماذج المتاحة: llama-3.1-8b-instruct, llama-3.1-70b-instruct, mixtral-8x7b-32768
         self.model_name = os.getenv("GROQ_MODEL_NAME", "llama-3.1-8b-instruct")  # تغيير الافتراضي
+        
+        # Log model name for debugging
+        logger.info(f"GroqService initialized with model: {self.model_name}")
+        logger.info(f"GROQ_MODEL_NAME from env: {os.getenv('GROQ_MODEL_NAME', 'NOT SET')}")
         
         if not self.groq_api_key:
             raise ValueError("GROQ_API_KEY environment variable not set.")
