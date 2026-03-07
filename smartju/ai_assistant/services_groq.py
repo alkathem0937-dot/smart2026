@@ -18,8 +18,9 @@ class GroqService:
     def __init__(self):
         self.groq_api_key = os.getenv("GROQ_API_KEY")
         self.groq_api_url = "https://api.groq.com/openai/v1/chat/completions"
-        # قائمة النماذج المتاحة: llama-3.1-8b-instruct, llama-3.1-70b-instruct, mixtral-8x7b-32768
-        self.model_name = os.getenv("GROQ_MODEL_NAME", "llama-3.1-8b-instruct")  # تغيير الافتراضي
+        # قائمة النماذج المتاحة: llama-3-8b-8192, llama-3-70b-8192, mixtral-8x7b-32768, gemma2-9b-it
+        # ملاحظة: llama-3.1-8b-instruct غير متاح، استخدم llama-3-8b-8192 بدلاً منه
+        self.model_name = os.getenv("GROQ_MODEL_NAME", "llama-3-8b-8192")  # نموذج افتراضي متاح
         
         # Log model name for debugging
         logger.info(f"GroqService initialized with model: {self.model_name}")
