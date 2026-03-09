@@ -9,8 +9,8 @@ import logging
 from dotenv import load_dotenv
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.docstore.document import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
 from pdf2image import convert_from_path
 import pytesseract
 import tempfile
@@ -27,25 +27,43 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SmartJudi2 RAG Engine", version="1.0.0")
+app = FastAPI(
+    title="SmartJudi2 RAG Engine",
+    description="FastAPI service for Retrieval-Augmented Generation using ChromaDB and HuggingFace Embeddings.",
+    version="1.0.0",
+)
 
 # --- Configuration --- #
 
 # Embedding model name
 # (اسم نموذج التضمين)
+# Note: Using intfloat/multilingual-e5-large instead of sentence-transformers/ prefix
 EMBEDDING_MODEL_NAME = os.getenv(
     "EMBEDDING_MODEL_NAME",
-    "sentence-transformers/multilingual-e5-large"
+    "intfloat/multilingual-e5-large"  # Changed from sentence-transformers/multilingual-e5-large
 )
 
 # Directory for ChromaDB persistence
 # (مسار تخزين قاعدة بيانات ChromaDB)
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
+CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", CHROMA_DB_DIR)  # Alias for compatibility
 
 # Initialize embedding model
 # (تهيئة نموذج التضمين)
+# Get Hugging Face token from environment
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
+
 try:
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+    # Use token if available for private/gated models
+    model_kwargs = {}
+    if HUGGINGFACE_TOKEN:
+        model_kwargs["token"] = HUGGINGFACE_TOKEN
+        logger.info("Using Hugging Face token for model access")
+    
+    embeddings = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL_NAME,
+        model_kwargs=model_kwargs
+    )
     logger.info(f"Successfully loaded embedding model: {EMBEDDING_MODEL_NAME}")
 except Exception as e:
     logger.error(f"Error loading embedding model: {e}")
@@ -54,6 +72,8 @@ except Exception as e:
 
 # Initialize ChromaDB client
 # (تهيئة عميل ChromaDB)
+vectorstore = None
+
 def get_chroma_client():
     try:
         os.makedirs(CHROMA_DB_DIR, exist_ok=True)
@@ -61,6 +81,7 @@ def get_chroma_client():
             persist_directory=CHROMA_DB_DIR,
             embedding_function=embeddings
         )
+        client.persist()
         logger.info(f"Successfully initialized ChromaDB at {CHROMA_DB_DIR}")
         return client
     except Exception as e:
@@ -68,7 +89,43 @@ def get_chroma_client():
         raise RuntimeError(f"Failed to initialize ChromaDB: {e}")
 
 
-vectorstore = get_chroma_client()
+# Initialize on startup
+@app.on_event("startup")
+async def startup_event():
+    """
+    Initialize the embedding model and ChromaDB on application startup.
+    تهيئة نموذج التضمين و ChromaDB عند بدء تشغيل التطبيق.
+    """
+    global vectorstore
+    try:
+        logger.info("Initializing ChromaDB...")
+        vectorstore = get_chroma_client()
+        logger.info("ChromaDB initialized and persisted successfully.")
+    except Exception as e:
+        logger.error(f"Failed to initialize RAG components: {e}")
+        raise RuntimeError(f"Failed to initialize RAG components: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Persist ChromaDB on application shutdown.
+    حفظ ChromaDB عند إغلاق التطبيق.
+    """
+    global vectorstore
+    if vectorstore:
+        try:
+            vectorstore.persist()
+            logger.info("ChromaDB persisted successfully on shutdown.")
+        except Exception as e:
+            logger.error(f"Failed to persist ChromaDB on shutdown: {e}")
+
+
+# Initialize vectorstore immediately (will be re-initialized in startup event for async safety)
+try:
+    vectorstore = get_chroma_client()
+except Exception as e:
+    logger.warning(f"Initial vectorstore initialization failed, will retry on startup: {e}")
 
 # Text splitter for document processing
 # (مقسم النصوص لمعالجة المستندات)
@@ -144,16 +201,40 @@ def process_document(file_content: bytes, file_name: str) -> List[Document]:
 
 # --- API Models ---
 
+from pydantic import Field
+from typing import Optional
+
+class DocumentSchema(BaseModel):
+    """Schema for document content and metadata"""
+    page_content: str = Field(..., description="The textual content of the document.")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata associated with the document.")
+
+
+class SearchQuery(BaseModel):
+    """Schema for search requests"""
+    query_text: str = Field(..., description="The query string to search for.")
+    k: int = Field(default=4, ge=1, le=10, description="The number of relevant documents to retrieve.")
+
+
+class DeleteQuery(BaseModel):
+    """Schema for delete requests"""
+    ids: Optional[List[str]] = Field(None, description="List of document IDs to delete.")
+    metadata_filter: Optional[Dict[str, Any]] = Field(None, description="Metadata to filter documents for deletion.")
+
+
 class DocumentAddRequest(BaseModel):
+    """Legacy model for backward compatibility"""
     documents: List[Dict[str, str]]
 
 
 class SearchRequest(BaseModel):
+    """Legacy model for backward compatibility"""
     query: str
     k: int = 4
 
 
 class SearchResponse(BaseModel):
+    """Legacy model for backward compatibility"""
     results: List[Dict[str, Any]]
 
 
@@ -164,15 +245,18 @@ class HealthResponse(BaseModel):
 
 # --- API Endpoints ---
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health", summary="Health Check", response_model=Dict[str, str])
 async def health_check():
-    """نقطة نهاية للتحقق من صحة الخدمة"""
+    """
+    Checks the health of the RAG engine.
+    يتحقق من حالة عمل محرك RAG.
+    """
+    logger.info("Health check requested.")
+    if embeddings is None or vectorstore is None:
+        raise HTTPException(status_code=503, detail="RAG components not initialized.")
     try:
         _ = vectorstore._collection.count()
-        return HealthResponse(
-            status="ok",
-            message="RAG engine is healthy and ChromaDB is accessible."
-        )
+        return {"status": "ok"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(
@@ -181,57 +265,96 @@ async def health_check():
         )
 
 
-@app.post("/add_documents")
-async def add_documents(files: List[UploadFile] = File(...)):
-    """نقطة نهاية لإضافة مستندات جديدة"""
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided.")
-
+@app.post("/add_documents", summary="Add Documents to ChromaDB", response_model=Dict[str, str])
+async def add_documents(
+    documents: Optional[List[DocumentSchema]] = None,
+    files: Optional[List[UploadFile]] = File(None)
+):
+    """
+    Adds a list of documents to the ChromaDB vector store.
+    يضيف قائمة من المستندات إلى مخزن المتجهات ChromaDB.
+    Supports both JSON document list and file uploads.
+    """
     all_documents = []
-    for file in files:
+    
+    # Handle JSON document list (new API)
+    if documents:
         try:
-            file_content = await file.read()
-            docs = process_document(file_content, file.filename)
-            all_documents.extend(docs)
-        except HTTPException as e:
-            logger.error(f"Error processing file {file.filename}: {e.detail}")
-            raise e
+            from langchain_core.documents import Document as LangchainDocument
+            langchain_documents = [
+                LangchainDocument(page_content=doc.page_content, metadata=doc.metadata) 
+                for doc in documents
+            ]
+            all_documents.extend(langchain_documents)
+            logger.info(f"Received {len(documents)} documents via JSON API")
         except Exception as e:
-            logger.error(
-                f"Unexpected error processing file {file.filename}: {e}"
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=f"Internal server error processing file {file.filename}"
-            )
+            logger.error(f"Error processing JSON documents: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to process documents: {e}")
+    
+    # Handle file uploads (legacy API)
+    if files:
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided.")
+
+        for file in files:
+            try:
+                file_content = await file.read()
+                docs = process_document(file_content, file.filename)
+                all_documents.extend(docs)
+            except HTTPException as e:
+                logger.error(f"Error processing file {file.filename}: {e.detail}")
+                raise e
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error processing file {file.filename}: {e}"
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Internal server error processing file {file.filename}"
+                )
 
     if not all_documents:
         raise HTTPException(
             status_code=400,
-            detail="No valid documents could be processed."
+            detail="No documents provided. Please provide either documents list or files."
         )
 
     try:
         vectorstore.add_documents(all_documents)
-        logger.info(
-            f"Added {len(all_documents)} document chunks to ChromaDB."
-        )
-        return {
-            "status": "success",
-            "message": f"Added {len(all_documents)} document chunks.",
-            "filenames": [f.filename for f in files]
-        }
+        vectorstore.persist()
+        logger.info(f"Successfully added {len(all_documents)} documents.")
+        return {"message": f"Successfully added {len(all_documents)} documents."}
     except Exception as e:
-        logger.error(f"Error adding documents to ChromaDB: {e}")
+        logger.error(f"Error adding documents: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to add documents to vector store: {e}"
+            detail=f"Failed to add documents: {e}"
         )
 
 
-@app.post("/search", response_model=SearchResponse)
-async def search_documents(request: SearchRequest):
-    """نقطة نهاية للبحث عن المستندات ذات الصلة"""
+@app.post("/search", response_model=List[DocumentSchema])
+async def search_documents(query: SearchQuery):
+    """
+    Searches the ChromaDB vector store for documents relevant to the given query.
+    يبحث في مخزن المتجهات ChromaDB عن المستندات ذات الصلة بالاستعلام المحدد.
+    """
+    try:
+        logger.info(f"Searching ChromaDB for query: '{query.query_text}' with k={query.k}")
+        results = vectorstore.similarity_search(query.query_text, k=query.k)
+        logger.info(f"Found {len(results)} relevant documents.")
+        return [DocumentSchema(page_content=doc.page_content, metadata=doc.metadata) for doc in results]
+    except Exception as e:
+        logger.error(f"Error searching documents: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to search documents: {e}"
+        )
+
+
+# Legacy endpoint for backward compatibility
+@app.post("/search_legacy", response_model=SearchResponse)
+async def search_documents_legacy(request: SearchRequest):
+    """Legacy endpoint for backward compatibility"""
     try:
         results = vectorstore.similarity_search(request.query, k=request.k)
         formatted_results = []
@@ -253,9 +376,44 @@ async def search_documents(request: SearchRequest):
         )
 
 
-@app.delete("/delete_documents")
-async def delete_documents(source: str = Form(...)):
-    """نقطة نهاية لحذف المستندات بناءً على المصدر"""
+@app.post("/delete_documents", summary="Delete Documents from ChromaDB", response_model=Dict[str, str])
+async def delete_documents(delete_query: DeleteQuery):
+    """
+    Deletes documents from the ChromaDB vector store based on IDs or metadata filter.
+    يحذف المستندات من مخزن المتجهات ChromaDB بناءً على المعرفات أو فلتر البيانات الوصفية.
+    """
+    if not delete_query.ids and not delete_query.metadata_filter:
+        raise HTTPException(
+            status_code=400,
+            detail="Either 'ids' or 'metadata_filter' must be provided."
+        )
+
+    try:
+        if delete_query.ids:
+            logger.info(f"Deleting documents with IDs: {delete_query.ids}")
+            vectorstore.delete(ids=delete_query.ids)
+            vectorstore.persist()
+            logger.info(f"Successfully deleted documents with IDs: {delete_query.ids}")
+            return {"message": f"Successfully deleted documents with IDs: {delete_query.ids}"}
+        elif delete_query.metadata_filter:
+            logger.info(f"Deleting documents with metadata filter: {delete_query.metadata_filter}")
+            # ChromaDB's delete method supports where clause for metadata
+            vectorstore.delete(where=delete_query.metadata_filter)
+            vectorstore.persist()
+            logger.info(f"Successfully deleted documents with metadata filter: {delete_query.metadata_filter}")
+            return {"message": f"Successfully deleted documents with metadata filter: {delete_query.metadata_filter}"}
+    except Exception as e:
+        logger.error(f"Error deleting documents: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete documents: {e}"
+        )
+
+
+# Legacy endpoint for backward compatibility
+@app.delete("/delete_documents_legacy")
+async def delete_documents_legacy(source: str = Form(...)):
+    """Legacy endpoint for backward compatibility"""
     try:
         docs_to_delete = vectorstore.get(where={"source": source})
         if not docs_to_delete['ids']:
@@ -265,6 +423,7 @@ async def delete_documents(source: str = Form(...)):
             }
 
         vectorstore.delete(ids=docs_to_delete['ids'])
+        vectorstore.persist()
         logger.info(
             f"Deleted {len(docs_to_delete['ids'])} document chunks "
             f"with source: {source}"

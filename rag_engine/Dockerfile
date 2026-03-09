@@ -1,14 +1,20 @@
 # Use an official Python runtime as a parent image
-FROM python:3.10-slim-buster
+# استخدام أحدث إصدار من Debian (bookworm) بدلاً من buster القديم
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
 
 # Install system dependencies for sentence-transformers and other libraries
 # (تثبيت التبعيات اللازمة لـ sentence-transformers ومكتبات أخرى)
+# Note: Added tesseract-ocr and poppler-utils for OCR and PDF processing
 RUN apt-get update && apt-get install -y \
     build-essential \
     git \
+    tesseract-ocr \
+    tesseract-ocr-ara \
+    tesseract-ocr-eng \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the current directory contents into the container at /app

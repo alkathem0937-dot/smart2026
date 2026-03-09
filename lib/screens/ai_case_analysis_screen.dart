@@ -3,7 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/ai_chat_provider.dart';
+import '../providers/chat_provider.dart';
 
 /// AI-Powered Case Analysis Screen - تحليل وإعداد القضايا بالذكاء الاصطناعي
 class AICaseAnalysisScreen extends StatefulWidget {
@@ -45,12 +45,23 @@ class _AICaseAnalysisScreenState extends State<AICaseAnalysisScreen> {
         "${_caseDescriptionController.text}";
 
     try {
-      final chatProvider = Provider.of<AIChatProvider>(context, listen: false);
-      final response =
-          await chatProvider.apiService.getChatResponse(query, []);
-      setState(() {
-        _analysisResult = response['response'] ?? 'لم يتم الحصول على نتائج.';
-      });
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+      await chatProvider.sendMessage(query);
+      
+      // Extract response from messages
+      if (chatProvider.messages.isNotEmpty) {
+        final lastMessage = chatProvider.messages.last;
+        if (lastMessage['role'] == 'assistant') {
+          final content = lastMessage['content'];
+          setState(() {
+            _analysisResult = content?.toString() ?? 'لم يتم الحصول على نتائج.';
+          });
+        } else {
+          setState(() {
+            _analysisResult = 'لم يتم الحصول على نتائج.';
+          });
+        }
+      }
     } catch (e) {
       setState(() {
         _errorMessage = 'فشل في تحليل القضية: $e';

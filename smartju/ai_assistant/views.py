@@ -5,6 +5,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .services import AIAssistantService, RAGService
+from .services.ai_assistant_service import AIAssistantService as NewAIAssistantService
+from .services.rag_service import RAGService as NewRAGService
 from .serializers import ChatRequestSerializer, ChatResponseSerializer
 import logging
 import os
@@ -57,14 +59,40 @@ class AIChatView(APIView):
 
         serializer = ChatRequestSerializer(data=request.data)
         if serializer.is_valid():
-            user_query = serializer.validated_data['query']
+            # Support both user_query (new) and query (legacy)
+            user_query = serializer.validated_data.get('user_query') or serializer.validated_data.get('query')
             conversation_history = serializer.validated_data.get('conversation_history', [])
 
             logger.info(f"Received chat query: {user_query}")
             try:
-                response_data = self.ai_assistant_service.get_ai_response(
-                    user_query, conversation_history
-                )
+                # Try new service first, fallback to old service
+                try:
+                    new_service = NewAIAssistantService()
+                    ai_response_content = new_service.get_ai_response(user_query, conversation_history)
+                    response_data = {
+                        "ai_response": ai_response_content,
+                        "conversation_history": conversation_history + [
+                            {"role": "user", "content": user_query},
+                            {"role": "assistant", "content": ai_response_content}
+                        ]
+                    }
+                except Exception as e:
+                    logger.warning(f"New service failed, using legacy service: {e}")
+                    # Fallback to legacy service
+                    response_data = self.ai_assistant_service.get_ai_response(
+                        user_query, conversation_history
+                    )
+                    # Convert legacy format to new format
+                    if isinstance(response_data, dict) and "response" in response_data:
+                        response_data = {
+                            "ai_response": response_data["response"],
+                            "conversation_history": conversation_history + [
+                                {"role": "user", "content": user_query},
+                                {"role": "assistant", "content": response_data["response"]}
+                            ],
+                            "source_documents": response_data.get("source_documents", [])
+                        }
+                
                 response_serializer = ChatResponseSerializer(data=response_data)
                 response_serializer.is_valid(raise_exception=True)
                 return Response(response_serializer.data, status=status.HTTP_200_OK)

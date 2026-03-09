@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
 import 'providers/lawsuit_provider.dart';
 import 'providers/ai_chat_provider.dart';
+import 'providers/chat_provider.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -75,6 +76,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LawsuitProvider(apiService: apiService)),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => AIChatProvider()),
+        ChangeNotifierProvider(create: (_) => ChatProvider()), // New chat provider for enhanced AI assistant
         ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
           create: (_) => NotificationProvider(apiService),
           update: (_, auth, prev) => NotificationProvider(apiService),
@@ -129,6 +131,7 @@ class MyApp extends StatelessWidget {
               '/contact-us': (context) => const ContactUsScreen(),
               '/notifications': (context) => const NotificationsScreen(),
               '/subscribe': (context) => const SubscribeScreen(),
+              '/case-analysis': (context) => const AICaseAnalysisScreen(),
             },
           );
         },

@@ -3,7 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/ai_chat_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import 'dart:developer' as developer;
@@ -27,9 +27,8 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       _apiService = authProvider.apiService;
-      // تعيين token للمساعد الذكي
-      final aiChatProvider = Provider.of<AIChatProvider>(context, listen: false);
-      aiChatProvider.setAccessToken(authProvider.accessToken);
+      // Note: ChatProvider doesn't need token setup as it uses AIApiService directly
+      // ملاحظة: ChatProvider لا يحتاج إعداد token لأنه يستخدم AIApiService مباشرة
     });
   }
 
@@ -57,21 +56,26 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
     if (question.isEmpty) return;
 
     _questionController.clear();
-    final chatProvider = Provider.of<AIChatProvider>(context, listen: false);
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     
     await chatProvider.sendMessage(question);
 
-    // حفظ سجل الدردشة
+    // حفظ سجل الدردشة بعد الحصول على الاستجابة
+    // Wait for response then save log
     try {
       final messages = chatProvider.messages;
-      if (messages.isNotEmpty) {
+      if (messages.length >= 2) {
         final lastMessage = messages.last;
         if (lastMessage['role'] == 'assistant') {
-          await _apiService.createAIChatLog(
-            question,
-            lastMessage['content'] ?? '',
-            modelVersion: 'smartjudi-qwen',
-          );
+          final content = lastMessage['content'];
+          if (content != null) {
+            final contentStr = content.toString();
+            await _apiService.createAIChatLog(
+              question,
+              contentStr,
+              modelVersion: 'groq-openrouter',
+            );
+          }
         }
       }
     } catch (e) {
@@ -92,7 +96,7 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
           IconButton(
             icon: const Icon(Icons.clear_all),
             onPressed: () {
-              Provider.of<AIChatProvider>(context, listen: false).clearChat();
+              Provider.of<ChatProvider>(context, listen: false).clearMessages();
             },
             tooltip: 'مسح الدردشة',
           ),
@@ -102,7 +106,7 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
         children: [
           // منطقة الرسائل
           Expanded(
-            child: Consumer<AIChatProvider>(
+            child: Consumer<ChatProvider>(
               builder: (context, provider, child) {
                 _scrollToBottom();
                 return ListView.builder(
@@ -112,14 +116,17 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
                   itemBuilder: (context, index) {
                     final message = provider.messages[index];
                     final isUser = message['role'] == 'user';
-                    return _buildMessageBubble(message, isUser);
+                    return _buildMessageBubble(
+                      {'role': message['role'] as String, 'content': message['content'] as String},
+                      isUser
+                    );
                   },
                 );
               },
             ),
           ),
           // مؤشر التحميل
-          Consumer<AIChatProvider>(
+          Consumer<ChatProvider>(
             builder: (context, provider, child) {
               if (provider.isLoading) {
                 return Container(
@@ -146,21 +153,8 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
               return const SizedBox.shrink();
             },
           ),
-          // رسالة الخطأ
-          Consumer<AIChatProvider>(
-            builder: (context, provider, child) {
-              if (provider.errorMessage != null) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Text(
-                    provider.errorMessage!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12),
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
+          // Note: ChatProvider doesn't have errorMessage, errors are shown in messages
+          // ملاحظة: ChatProvider لا يحتوي على errorMessage، الأخطاء تظهر في الرسائل
           // حقل الإدخال
           Container(
             padding: const EdgeInsets.all(12),
@@ -209,7 +203,7 @@ class _SmartAssistantScreenState extends State<SmartAssistantScreen> {
                     ),
                   ),
                   const SizedBox(width: 8.0),
-                  Consumer<AIChatProvider>(
+                  Consumer<ChatProvider>(
                     builder: (context, provider, child) {
                       return Container(
                         decoration: BoxDecoration(

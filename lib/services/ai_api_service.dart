@@ -38,14 +38,26 @@ class AIApiService {
             url,
             headers: _headers,
             body: json.encode({
-              'query': query,
+              'user_query': query,  // Use user_query for new API
               'conversation_history': conversationHistory,
             }),
           )
           .timeout(const Duration(seconds: 120)); // طول المهلة لاستجابات AI
 
       if (response.statusCode == 200) {
-        return json.decode(utf8.decode(response.bodyBytes));
+        final responseData = json.decode(utf8.decode(response.bodyBytes));
+        // Normalize response: support both ai_response (new) and response (legacy)
+        if (responseData.containsKey('ai_response')) {
+          return responseData;
+        } else if (responseData.containsKey('response')) {
+          // Convert legacy format to new format
+          return {
+            'ai_response': responseData['response'],
+            'conversation_history': responseData.get('conversation_history', []),
+            'source_documents': responseData.get('source_documents', []),
+          };
+        }
+        return responseData;
       } else {
         debugPrint(
             'Error getting chat response: ${response.statusCode} ${response.body}');
