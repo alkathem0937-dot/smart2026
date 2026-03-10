@@ -14,6 +14,8 @@ class LawsuitModel {
   final String? governorate;
   final String? notes;
   final DateTime? filingDate;
+  final DateTime? gregorianDate;
+  final String? hijriDate;
   final int? courtId;
   final String? courtName;
   final int? judgeId;
@@ -51,6 +53,8 @@ class LawsuitModel {
     this.governorate,
     this.notes,
     this.filingDate,
+    this.gregorianDate,
+    this.hijriDate,
     this.courtId,
     this.courtName,
     this.judgeId,
@@ -88,6 +92,10 @@ class LawsuitModel {
       filingDate: json['filing_date'] != null 
           ? DateTime.parse(json['filing_date']) 
           : null,
+      gregorianDate: json['gregorian_date'] != null 
+          ? DateTime.parse(json['gregorian_date']) 
+          : null,
+      hijriDate: json['hijri_date'],
       courtId: json['court_fk'] ?? json['court'] ?? json['court_id'],
       courtName: json['court_detail'] != null 
           ? json['court_detail']['court_name'] 
@@ -128,6 +136,8 @@ class LawsuitModel {
       if (governorate != null) 'governorate': governorate,
       if (notes != null) 'notes': notes,
       if (filingDate != null) 'filing_date': filingDate!.toIso8601String().split('T')[0],
+      if (gregorianDate != null) 'gregorian_date': gregorianDate!.toIso8601String().split('T')[0],
+      if (hijriDate != null) 'hijri_date': hijriDate,
       if (courtId != null) 'court_fk': courtId,
       if (judgeId != null) 'judge': judgeId,
       if (parentLawsuitId != null) 'parent_lawsuit': parentLawsuitId,

@@ -11,3 +11,8 @@ dj-database-url
 requests
 httpx
 python-dotenv
+# Optional: for data loading scripts (better text splitting and progress bar)
+langchain>=0.1.0
+langchain-text-splitters>=0.0.1
+langchain-core>=0.1.0
+tqdm>=4.65.0

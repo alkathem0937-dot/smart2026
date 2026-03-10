@@ -28,11 +28,9 @@ class ChatProvider with ChangeNotifier {
       List<Map<String, String>> historyForApi = _messages
           .where((msg) => msg['role'] != 'system')
           .map((msg) => {
-              return {
                 'role': msg['role'] as String,
                 'content': msg['content'] as String,
-              };
-            })
+              })
           .toList();
       
       final response = await _apiService.getChatResponse(

@@ -33,22 +33,41 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   // Legal text controllers (dynamic based on case type)
   final Map<String, TextEditingController> _legalTextControllers = {};
   
+  // Rich text controllers for facts, legal reasons, and requests
+  late TextEditingController _factsController;
+  late TextEditingController _legalReasonsController;
+  late TextEditingController _requestsController;
+  
+  // Date controllers
+  late TextEditingController _hijriDateController;
+  
   String? _selectedCaseType;
   String? _selectedCaseStatus;
   String? _selectedGovernorate;
   int? _selectedCourtId;
+  DateTime? _filingDateGregorian;
+  String? _filingDateHijri;
+  
+  // Lists for dropdowns
+  List<Map<String, dynamic>> _governorates = [];
+  List<Map<String, dynamic>> _courts = [];
+  bool _isLoadingGovernorates = false;
+  bool _isLoadingCourts = false;
   
   bool _isLoadingTemplates = false;
   Map<String, dynamic>? _templates;
   List<String> _templateKeys = [];
   
-  // Parties data
+  // Parties data (now available in create mode too)
+  List<Map<String, dynamic>> _plaintiffsData = []; // Local data for new lawsuit
+  List<Map<String, dynamic>> _defendantsData = []; // Local data for new lawsuit
   List<PlaintiffModel> _plaintiffs = [];
   List<DefendantModel> _defendants = [];
   bool _isLoadingParties = false;
   
   // Attachments data
   List<Map<String, dynamic>> _attachments = [];
+  List<Map<String, dynamic>> _attachmentsData = []; // Local data for new lawsuit
   bool _isLoadingAttachments = false;
   bool _isUploadingAttachment = false;
   
@@ -60,10 +79,23 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     _caseNumberController = TextEditingController();
     _subjectController = TextEditingController();
     _descriptionController = TextEditingController();
+    _factsController = TextEditingController();
+    _legalReasonsController = TextEditingController();
+    _requestsController = TextEditingController();
     
     // Default case type
     _selectedCaseType = 'دعوى';
     _selectedCaseStatus = 'جديد';
+    _filingDateGregorian = DateTime.now();
+    _filingDateHijri = _convertToHijri(_filingDateGregorian!);
+    _hijriDateController = TextEditingController(text: _filingDateHijri ?? '');
+    
+    // Initialize with one empty row for parties and attachments
+    if (!_isEditMode) {
+      _plaintiffsData.add({});
+      _defendantsData.add({});
+      _attachmentsData.add({});
+    }
 
     if (_isEditMode) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -75,6 +107,12 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       // Load templates for default case type
       _loadTemplates(_selectedCaseType!);
     }
+    
+    // Load governorates and courts
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadGovernorates();
+      _loadCourts();
+    });
   }
 
   @override
@@ -82,10 +120,95 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     _caseNumberController.dispose();
     _subjectController.dispose();
     _descriptionController.dispose();
+    _factsController.dispose();
+    _legalReasonsController.dispose();
+    _requestsController.dispose();
+    _hijriDateController.dispose();
     for (var controller in _legalTextControllers.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+  
+  String _convertToHijri(DateTime date) {
+    try {
+      final hijri = HijriCalendar.fromDate(date);
+      return '${hijri.hYear}/${hijri.hMonth}/${hijri.hDay}';
+    } catch (e) {
+      return '';
+    }
+  }
+  
+  Future<void> _loadGovernorates() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingGovernorates = true;
+    });
+    
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final response = await authProvider.apiService.getGovernorates();
+      
+      if (mounted) {
+        List<dynamic>? data;
+        if (response is Map<String, dynamic>) {
+          if (response['results'] != null) {
+            data = response['results'] as List?;
+          }
+        }
+        
+        setState(() {
+          _governorates = (data ?? []).map((e) => {
+            'id': e['id'],
+            'name': e['name'] ?? '',
+          }).toList();
+          _isLoadingGovernorates = false;
+        });
+      }
+    } catch (e) {
+      developer.log('Error loading governorates: $e', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        setState(() {
+          _isLoadingGovernorates = false;
+        });
+      }
+    }
+  }
+  
+  Future<void> _loadCourts() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingCourts = true;
+    });
+    
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final response = await authProvider.apiService.getCourts();
+      
+      if (mounted) {
+        List<dynamic>? data;
+        if (response is Map<String, dynamic>) {
+          if (response['results'] != null) {
+            data = response['results'] as List?;
+          }
+        }
+        
+        setState(() {
+          _courts = (data ?? []).map((e) => {
+            'id': e['id'],
+            'name': e['court_name'] ?? e['name'] ?? '',
+          }).toList();
+          _isLoadingCourts = false;
+        });
+      }
+    } catch (e) {
+      developer.log('Error loading courts: $e', name: 'LawsuitDetailScreen');
+      if (mounted) {
+        setState(() {
+          _isLoadingCourts = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadLawsuit() async {
@@ -99,11 +222,22 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       _selectedCaseType = lawsuit.caseType;
       _selectedCaseStatus = lawsuit.caseStatus ?? 'جديد';
       _selectedGovernorate = lawsuit.governorate;
+      _selectedCourtId = lawsuit.courtId;
+      _filingDateGregorian = lawsuit.filingDate;
+      if (_filingDateGregorian != null) {
+        _filingDateHijri = _convertToHijri(_filingDateGregorian!);
+        _hijriDateController.text = _filingDateHijri ?? '';
+      }
+      
+      // Populate rich text fields
+      _factsController.text = lawsuit.facts ?? '';
+      _legalReasonsController.text = lawsuit.legalReasons ?? '';
+      _requestsController.text = lawsuit.requests ?? '';
       
       // Load templates and populate legal text fields
       await _loadTemplates(_selectedCaseType!);
       
-      // Populate legal text fields from lawsuit
+      // Populate legal text fields from lawsuit (for template-based fields)
       if (lawsuit.facts != null && _legalTextControllers.containsKey('facts')) {
         _legalTextControllers['facts']!.text = lawsuit.facts!;
       }
@@ -443,19 +577,28 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
 
     final provider = Provider.of<LawsuitProvider>(context, listen: false);
     
-    // Build legal texts from controllers
-    String? facts;
-    String? legalBasis;
-    String? requests;
+    // Build legal texts from controllers (prioritize rich text controllers)
+    String? facts = _factsController.text.trim().isNotEmpty 
+        ? _factsController.text.trim() 
+        : (_legalTextControllers.containsKey('facts') 
+            ? _legalTextControllers['facts']!.text.trim() 
+            : null);
+    String? legalBasis = _legalTextControllers.containsKey('legal')
+        ? _legalTextControllers['legal']!.text.trim()
+        : null;
+    String? legalReasons = _legalReasonsController.text.trim().isNotEmpty
+        ? _legalReasonsController.text.trim()
+        : null;
+    String? requests = _requestsController.text.trim().isNotEmpty
+        ? _requestsController.text.trim()
+        : (_legalTextControllers.containsKey('requests')
+            ? _legalTextControllers['requests']!.text.trim()
+            : null);
     
-    if (_legalTextControllers.containsKey('facts')) {
-      facts = _legalTextControllers['facts']!.text.trim();
-    }
-    if (_legalTextControllers.containsKey('legal')) {
-      legalBasis = _legalTextControllers['legal']!.text.trim();
-    }
-    if (_legalTextControllers.containsKey('requests')) {
-      requests = _legalTextControllers['requests']!.text.trim();
+    // Convert hijri date if needed
+    String? hijriDate = _filingDateHijri;
+    if (_filingDateGregorian != null && (hijriDate == null || hijriDate.isEmpty)) {
+      hijriDate = _convertToHijri(_filingDateGregorian!);
     }
     
     final lawsuit = LawsuitModel(
@@ -471,9 +614,13 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
           : _descriptionController.text.trim(),
       facts: facts?.isEmpty ?? true ? null : facts,
       legalBasis: legalBasis?.isEmpty ?? true ? null : legalBasis,
+      legalReasons: legalReasons?.isEmpty ?? true ? null : legalReasons,
       requests: requests?.isEmpty ?? true ? null : requests,
       governorate: _selectedGovernorate,
-      filingDate: DateTime.now(),
+      filingDate: _filingDateGregorian ?? DateTime.now(),
+      gregorianDate: _filingDateGregorian,
+      hijriDate: hijriDate,
+      courtId: _selectedCourtId,
     );
 
     if (_isEditMode) {
@@ -537,6 +684,44 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       // Create new lawsuit
       final createdLawsuit = await provider.createLawsuit(lawsuit);
       if (createdLawsuit != null && createdLawsuit.id != null && mounted) {
+        // Save parties if any
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        try {
+          // Save plaintiffs
+          for (var plaintiffData in _plaintiffsData) {
+            if (plaintiffData['name'] != null && (plaintiffData['name'] as String).isNotEmpty) {
+              await authProvider.apiService.createPlaintiff({
+                'lawsuit_id': createdLawsuit.id!,
+                'name': plaintiffData['name'],
+                'gender': plaintiffData['gender'] == 'ذكر' ? 'male' : 'female',
+                'nationality': plaintiffData['nationality'] ?? '',
+                'occupation': plaintiffData['occupation'],
+                'address': plaintiffData['address'] ?? '',
+                'phone': plaintiffData['phone'],
+                'attorney_name': plaintiffData['attorney_name'],
+              });
+            }
+          }
+          
+          // Save defendants
+          for (var defendantData in _defendantsData) {
+            if (defendantData['name'] != null && (defendantData['name'] as String).isNotEmpty) {
+              await authProvider.apiService.createDefendant({
+                'lawsuit_id': createdLawsuit.id!,
+                'name': defendantData['name'],
+                'gender': defendantData['gender'] == 'ذكر' ? 'male' : 'female',
+                'nationality': defendantData['nationality'] ?? '',
+                'occupation': defendantData['occupation'],
+                'address': defendantData['address'] ?? '',
+                'phone': defendantData['phone'],
+                'attorney_name': defendantData['attorney_name'],
+              });
+            }
+          }
+        } catch (e) {
+          developer.log('Error saving parties: $e', name: 'LawsuitDetailScreen');
+        }
+        
         Navigator.pop(context);
         Navigator.pushReplacement(
           context,
@@ -626,18 +811,163 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   }
 
   Widget _buildForm() {
+    final screenWidth = MediaQuery.of(context).size.width;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth > 600 ? 24.0 : 12.0,
+        vertical: 16.0,
+      ),
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Case Type (triggers template loading)
+            // Header
+            Row(
+              children: [
+                const Icon(Icons.description, color: Colors.blue, size: 24),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _isEditMode ? 'تعديل الدعوى' : 'إنشاء دعوى جديدة',
+                    style: TextStyle(
+                      fontSize: MediaQuery.of(context).size.width > 600 ? 24 : 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
+            // Parties Section (Plaintiffs and Defendants) - Now available in create mode
+            _buildPartiesSection(),
+            const SizedBox(height: 24),
+            
+            // Case Details Section
+            const Divider(),
+            const SizedBox(height: 16),
+            Text(
+              'بيانات الدعوى',
+              style: TextStyle(
+                fontSize: MediaQuery.of(context).size.width > 600 ? 20 : 18,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.right,
+            ),
+            const SizedBox(height: 16),
+            
+            // Filing Dates
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth > 600;
+                if (isWide) {
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          readOnly: true,
+                          controller: TextEditingController(
+                            text: _filingDateGregorian != null
+                                ? DateFormat('yyyy-MM-dd').format(_filingDateGregorian!)
+                                : '',
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'تاريخ تقديم الدعوى بالميلادي',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.calendar_today),
+                          ),
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _filingDateGregorian ?? DateTime.now(),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime.now(),
+                            );
+                            if (picked != null) {
+                              setState(() {
+                                _filingDateGregorian = picked;
+                                _filingDateHijri = _convertToHijri(picked);
+                                _hijriDateController.text = _filingDateHijri ?? '';
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _hijriDateController,
+                          decoration: const InputDecoration(
+                            labelText: 'تاريخ تقديم الدعوى بالهجري',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.calendar_today),
+                            hintText: '1447/09/22',
+                          ),
+                          onChanged: (value) {
+                            _filingDateHijri = value;
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                } else {
+                  return Column(
+                    children: [
+                      TextFormField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: _filingDateGregorian != null
+                              ? DateFormat('yyyy-MM-dd').format(_filingDateGregorian!)
+                              : '',
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'تاريخ تقديم الدعوى بالميلادي',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.calendar_today),
+                        ),
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _filingDateGregorian ?? DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _filingDateGregorian = picked;
+                              _filingDateHijri = _convertToHijri(picked);
+                              _hijriDateController.text = _filingDateHijri ?? '';
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _hijriDateController,
+                        decoration: const InputDecoration(
+                          labelText: 'تاريخ تقديم الدعوى بالهجري',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.calendar_today),
+                          hintText: '1447/09/22',
+                        ),
+                        onChanged: (value) {
+                          _filingDateHijri = value;
+                        },
+                      ),
+                    ],
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Case Type
             DropdownButtonFormField<String>(
               value: _selectedCaseType,
               decoration: const InputDecoration(
-                labelText: 'نوع القضية',
+                labelText: 'نوع الدعوى',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.category),
               ),
@@ -651,13 +981,134 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
               onChanged: _onCaseTypeChanged,
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return 'يرجى اختيار نوع القضية';
+                  return 'يرجى اختيار نوع الدعوى';
                 }
                 return null;
               },
             ),
             const SizedBox(height: 16),
-
+            
+            // Governorate and Court
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth > 600;
+                if (isWide) {
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _isLoadingGovernorates
+                            ? const Center(child: CircularProgressIndicator())
+                            : DropdownButtonFormField<String>(
+                                value: _selectedGovernorate,
+                                decoration: const InputDecoration(
+                                  labelText: 'المحافظة',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.location_city),
+                                ),
+                                items: _governorates.map((gov) {
+                                  return DropdownMenuItem(
+                                    value: gov['name'] as String,
+                                    child: Text(gov['name'] as String),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedGovernorate = value;
+                                  });
+                                },
+                              ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _isLoadingCourts
+                            ? const Center(child: CircularProgressIndicator())
+                            : DropdownButtonFormField<int>(
+                                value: _selectedCourtId,
+                                decoration: const InputDecoration(
+                                  labelText: 'المحكمة *',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.gavel),
+                                ),
+                                items: _courts.map((court) {
+                                  return DropdownMenuItem(
+                                    value: court['id'] as int,
+                                    child: Text(court['name'] as String),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedCourtId = value;
+                                  });
+                                },
+                                validator: (value) {
+                                  if (value == null) {
+                                    return 'يرجى ملء هذا الحقل';
+                                  }
+                                  return null;
+                                },
+                              ),
+                      ),
+                    ],
+                  );
+                } else {
+                  return Column(
+                    children: [
+                      _isLoadingGovernorates
+                          ? const Center(child: CircularProgressIndicator())
+                          : DropdownButtonFormField<String>(
+                              value: _selectedGovernorate,
+                              decoration: const InputDecoration(
+                                labelText: 'المحافظة',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.location_city),
+                              ),
+                              items: _governorates.map((gov) {
+                                return DropdownMenuItem(
+                                  value: gov['name'] as String,
+                                  child: Text(gov['name'] as String),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedGovernorate = value;
+                                });
+                              },
+                            ),
+                      const SizedBox(height: 16),
+                      _isLoadingCourts
+                          ? const Center(child: CircularProgressIndicator())
+                          : DropdownButtonFormField<int>(
+                              value: _selectedCourtId,
+                              decoration: const InputDecoration(
+                                labelText: 'المحكمة *',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.gavel),
+                              ),
+                              items: _courts.map((court) {
+                                return DropdownMenuItem(
+                                  value: court['id'] as int,
+                                  child: Text(court['name'] as String),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedCourtId = value;
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null) {
+                                  return 'يرجى ملء هذا الحقل';
+                                }
+                                return null;
+                              },
+                            ),
+                    ],
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            
             // Case Number
             TextFormField(
               controller: _caseNumberController,
@@ -684,8 +1135,12 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                 labelText: 'موضوع الدعوى',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.subject),
+                helperText: 'الحد الأقصى 150 حرف',
               ),
               maxLength: 150,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return Text('$maxLength حرف متبقية');
+              },
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'يرجى إدخال موضوع الدعوى';
@@ -693,63 +1148,106 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
-            // Case Status
-            DropdownButtonFormField<String>(
-              value: _selectedCaseStatus,
-              decoration: const InputDecoration(
-                labelText: 'حالة القضية',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.info),
+            // Facts of the Case (Rich Text Editor)
+            const Divider(),
+            const SizedBox(height: 16),
+            Text(
+              'وقائع الدعوى',
+              style: TextStyle(
+                fontSize: MediaQuery.of(context).size.width > 600 ? 18 : 16,
+                fontWeight: FontWeight.bold,
               ),
-              items: const [
-                DropdownMenuItem(value: 'جديد', child: Text('جديد')),
-                DropdownMenuItem(value: 'قيد_النظر', child: Text('قيد النظر')),
-                DropdownMenuItem(value: 'مكتمل', child: Text('مكتمل')),
-                DropdownMenuItem(value: 'مغلق', child: Text('مغلق')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _selectedCaseStatus = value;
-                });
-              },
+              textAlign: TextAlign.right,
             ),
-            const SizedBox(height: 16),
-
-            // Description
+            const SizedBox(height: 8),
+            Text(
+              'الحد الأقصى 150 حرف ${150 - _factsController.text.length} حرف متبقية',
+              style: TextStyle(
+                color: (150 - _factsController.text.length) < 0 ? Colors.red : Colors.green,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.right,
+            ),
+            const SizedBox(height: 8),
             TextFormField(
-              controller: _descriptionController,
+              controller: _factsController,
               textAlign: TextAlign.right,
               decoration: const InputDecoration(
-                labelText: 'الوصف (اختياري)',
+                labelText: 'وقائع الدعوى',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.description),
+                hintText: 'أدخل وقائع الدعوى...',
               ),
-              maxLines: 3,
+              maxLines: 10,
+              maxLength: 150,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return const SizedBox.shrink();
+              },
             ),
             const SizedBox(height: 24),
 
-            // Legal Templates Section
+            // Legal Reasons and Grounds (Rich Text Editor)
+            const Divider(),
+            const SizedBox(height: 16),
+            Text(
+              'الاسباب والاسانيد القانونية',
+              style: TextStyle(
+                fontSize: MediaQuery.of(context).size.width > 600 ? 18 : 16,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.right,
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _legalReasonsController,
+              textAlign: TextAlign.right,
+              decoration: const InputDecoration(
+                labelText: 'الاسباب والاسانيد القانونية',
+                border: OutlineInputBorder(),
+                hintText: 'أدخل الأسباب والأسانيد القانونية...',
+              ),
+              maxLines: 10,
+            ),
+            const SizedBox(height: 24),
+
+            // Requests (Rich Text Editor)
+            const Divider(),
+            const SizedBox(height: 16),
+            Text(
+              'طلبات الدعوى',
+              style: TextStyle(
+                fontSize: MediaQuery.of(context).size.width > 600 ? 18 : 16,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.right,
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _requestsController,
+              textAlign: TextAlign.right,
+              decoration: const InputDecoration(
+                labelText: 'طلبات الدعوى',
+                border: OutlineInputBorder(),
+                hintText: 'أدخل طلبات الدعوى...',
+              ),
+              maxLines: 10,
+            ),
+            const SizedBox(height: 24),
+
+            // Legal Templates Section (if available)
             if (_isLoadingTemplates)
               const Center(child: CircularProgressIndicator())
-            else if (_templates != null && _templateKeys.isNotEmpty)
-              ..._buildLegalTextFields()
-            else
-              const SizedBox.shrink(),
-
-            const SizedBox(height: 32),
-
-            // Parties Section (only in edit mode)
-            if (_isEditMode && widget.lawsuitId != null) ...[
+            else if (_templates != null && _templateKeys.isNotEmpty) ...[
               const Divider(),
               const SizedBox(height: 16),
-              _buildPartiesSection(),
-              const SizedBox(height: 16),
+              ..._buildLegalTextFields(),
             ],
 
-            // Attachments Section (only in edit mode)
-            if (_isEditMode && widget.lawsuitId != null) ...[
+            const SizedBox(height: 24),
+
+            // Attachments Section (now available in create mode too)
+            if (!_isEditMode || widget.lawsuitId != null) ...[
               const Divider(),
               const SizedBox(height: 16),
               _buildAttachmentsSection(),
@@ -759,20 +1257,25 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
             // Save button
             Consumer<LawsuitProvider>(
               builder: (context, provider, child) {
-                return ElevatedButton(
+                return ElevatedButton.icon(
                   onPressed: (provider.isLoading || _isLoadingTemplates) ? null : _saveLawsuit,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: Colors.green,
                   ),
-                  child: provider.isLoading
+                  icon: const Icon(Icons.save, color: Colors.white),
+                  label: provider.isLoading
                       ? const SizedBox(
                           height: 20,
                           width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : Text(
-                          _isEditMode ? 'حفظ التغييرات' : 'إنشاء الدعوى',
-                          style: const TextStyle(fontSize: 16),
+                          _isEditMode ? 'حفظ التغييرات' : 'حفظ جميع البيانات',
+                          style: const TextStyle(fontSize: 16, color: Colors.white),
                         ),
                 );
               },
@@ -839,83 +1342,428 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   }
 
   Widget _buildPartiesSection() {
+    // In create mode, use local data; in edit mode, use loaded parties
+    final plaintiffsToShow = _isEditMode ? _plaintiffs : [];
+    final defendantsToShow = _isEditMode ? _defendants : [];
+    final plaintiffsDataToShow = _isEditMode ? [] : _plaintiffsData;
+    final defendantsDataToShow = _isEditMode ? [] : _defendantsData;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'أطراف الدعوى',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.person_add, color: Colors.green),
-                  onPressed: () => _showAddPartyDialog(isPlaintiff: true),
-                  tooltip: 'إضافة مدعي',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.person_add_outlined, color: Colors.orange),
-                  onPressed: () => _showAddPartyDialog(isPlaintiff: false),
-                  tooltip: 'إضافة مدعى عليه',
-                ),
-              ],
-            ),
-          ],
+        // Plaintiffs Section
+        Text(
+          'المدعون',
+          style: TextStyle(
+            fontSize: MediaQuery.of(context).size.width > 600 ? 18 : 16,
+            fontWeight: FontWeight.bold,
+          ),
+          textAlign: TextAlign.right,
         ),
-        const SizedBox(height: 16),
-        
-        // Plaintiffs
+        const SizedBox(height: 12),
         Card(
-          color: Colors.green.shade50,
-          child: ExpansionTile(
-            key: ValueKey('plaintiffs_${_plaintiffs.length}'),
-            leading: const Icon(Icons.person, color: Colors.green),
-            title: Text('المدعون (${_plaintiffs.length})'),
-            initiallyExpanded: _plaintiffs.isNotEmpty,
-            children: _isLoadingParties && _plaintiffs.isEmpty
-                ? [const Center(child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: CircularProgressIndicator(),
-                  ))]
-                : _plaintiffs.isEmpty
-                    ? [
-                        const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text('لا يوجد مدعون', style: TextStyle(color: Colors.grey)),
-                        ),
-                      ]
-                    : _plaintiffs.map((plaintiff) => _buildPartyCard(plaintiff, isPlaintiff: true)).toList(),
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: MediaQuery.of(context).size.width - 32,
+              ),
+              child: Column(
+                children: [
+                  // Table Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(width: 60, child: Text('خيارات', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('اسم الوكيل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('العنوان', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('رقم الهاتف', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('العمل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 60, child: Text('الجنس', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('الجنسية', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('اسم المدعى', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                      ],
+                    ),
+                  ),
+                  // Table Rows
+                  if (_isEditMode)
+                    ...(_isLoadingParties && plaintiffsToShow.isEmpty
+                        ? [const Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Center(child: CircularProgressIndicator()),
+                          )]
+                        : plaintiffsToShow.isEmpty
+                            ? [const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text('لا يوجد مدعون', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                              )]
+                            : plaintiffsToShow.map((p) => _buildPartyRow(p, isPlaintiff: true)).toList()),
+                  if (!_isEditMode)
+                    ...plaintiffsDataToShow.asMap().entries.map((entry) {
+                      return _buildPartyRowData(entry.value, entry.key, isPlaintiff: true);
+                    }).toList(),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              setState(() {
+                if (_isEditMode) {
+                  _showAddPartyDialog(isPlaintiff: true);
+                } else {
+                  _plaintiffsData.add({});
+                }
+              });
+            },
+            icon: const Icon(Icons.add, color: Colors.white, size: 20),
+            label: const Text('+ إضافة مدعي', style: TextStyle(color: Colors.white, fontSize: 14)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
         
-        // Defendants
+        // Defendants Section
+        Text(
+          'المدعى عليهم',
+          style: TextStyle(
+            fontSize: MediaQuery.of(context).size.width > 600 ? 18 : 16,
+            fontWeight: FontWeight.bold,
+          ),
+          textAlign: TextAlign.right,
+        ),
+        const SizedBox(height: 12),
         Card(
-          color: Colors.orange.shade50,
-          child: ExpansionTile(
-            key: ValueKey('defendants_${_defendants.length}'),
-            leading: const Icon(Icons.person_outline, color: Colors.orange),
-            title: Text('المدعى عليهم (${_defendants.length})'),
-            initiallyExpanded: _defendants.isNotEmpty,
-            children: _isLoadingParties && _defendants.isEmpty
-                ? [const Center(child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: CircularProgressIndicator(),
-                  ))]
-                : _defendants.isEmpty
-                    ? [
-                        const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text('لا يوجد مدعى عليهم', style: TextStyle(color: Colors.grey)),
-                        ),
-                      ]
-                    : _defendants.map((defendant) => _buildPartyCard(defendant, isPlaintiff: false)).toList(),
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: MediaQuery.of(context).size.width - 32,
+              ),
+              child: Column(
+                children: [
+                  // Table Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(width: 60, child: Text('خيارات', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('اسم الوكيل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('العنوان', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('رقم الهاتف', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('العمل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 60, child: Text('الجنس', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('الجنسية', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('اسم المدعى عليه', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                      ],
+                    ),
+                  ),
+                  // Table Rows
+                  if (_isEditMode)
+                    ...(_isLoadingParties && defendantsToShow.isEmpty
+                        ? [const Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Center(child: CircularProgressIndicator()),
+                          )]
+                        : defendantsToShow.isEmpty
+                            ? [const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text('لا يوجد مدعى عليهم', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                              )]
+                            : defendantsToShow.map((d) => _buildPartyRow(d, isPlaintiff: false)).toList()),
+                  if (!_isEditMode)
+                    ...defendantsDataToShow.asMap().entries.map((entry) {
+                      return _buildPartyRowData(entry.value, entry.key, isPlaintiff: false);
+                    }).toList(),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              setState(() {
+                if (_isEditMode) {
+                  _showAddPartyDialog(isPlaintiff: false);
+                } else {
+                  _defendantsData.add({});
+                }
+              });
+            },
+            icon: const Icon(Icons.add, color: Colors.white, size: 20),
+            label: const Text('+ إضافة مدعى عليه', style: TextStyle(color: Colors.white, fontSize: 14)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
           ),
         ),
       ],
+    );
+  }
+  
+  Widget _buildPartyRow(PartyModel party, {required bool isPlaintiff}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 60,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 16, color: Colors.blue),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _showAddPartyDialog(isPlaintiff: isPlaintiff, party: party),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _deleteParty(party, isPlaintiff: isPlaintiff),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: 100, child: Text(party.attorneyName ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 100, child: Text(party.address, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 100, child: Text(party.phone ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 80, child: Text(party.occupation ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 60, child: Text(party.genderDisplay, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1)),
+          SizedBox(width: 80, child: Text(party.nationality, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 100, child: Text(party.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildPartyRowData(Map<String, dynamic> data, int index, {required bool isPlaintiff}) {
+    final nameController = TextEditingController(text: data['name'] ?? '');
+    final nationalityController = TextEditingController(text: data['nationality'] ?? '');
+    final genderController = TextEditingController(text: data['gender'] ?? 'ذكر');
+    final occupationController = TextEditingController(text: data['occupation'] ?? '');
+    final phoneController = TextEditingController(text: data['phone'] ?? '');
+    final addressController = TextEditingController(text: data['address'] ?? '');
+    final attorneyController = TextEditingController(text: data['attorney_name'] ?? '');
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 60,
+            child: IconButton(
+              icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                setState(() {
+                  if (isPlaintiff) {
+                    _plaintiffsData.removeAt(index);
+                  } else {
+                    _defendantsData.removeAt(index);
+                  }
+                });
+              },
+            ),
+          ),
+          SizedBox(
+            width: 100,
+            child: TextFormField(
+              controller: attorneyController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: 'وكيل المدعى',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              maxLength: 70,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return const SizedBox.shrink();
+              },
+              onChanged: (value) {
+                data['attorney_name'] = value;
+              },
+            ),
+          ),
+          SizedBox(
+            width: 100,
+            child: TextFormField(
+              controller: addressController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: 'عنوان المدعى',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              maxLength: 70,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return const SizedBox.shrink();
+              },
+              onChanged: (value) {
+                data['address'] = value;
+              },
+            ),
+          ),
+          SizedBox(
+            width: 100,
+            child: TextFormField(
+              controller: phoneController,
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                hintText: isPlaintiff ? 'هاتف المدعى' : 'هاتف المدعى :',
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+                errorText: data['phone_error'],
+                errorStyle: const TextStyle(fontSize: 8),
+              ),
+              style: const TextStyle(fontSize: 10),
+              keyboardType: TextInputType.phone,
+              onChanged: (value) {
+                data['phone'] = value;
+                if (value.isEmpty) {
+                  data['phone_error'] = 'مطلوب';
+                } else {
+                  data['phone_error'] = null;
+                }
+                setState(() {});
+              },
+            ),
+          ),
+          SizedBox(
+            width: 80,
+            child: TextFormField(
+              controller: occupationController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: 'العمل',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              maxLength: 70,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return const SizedBox.shrink();
+              },
+              onChanged: (value) {
+                data['occupation'] = value;
+              },
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: DropdownButtonFormField<String>(
+              value: data['gender'] ?? 'ذكر',
+              decoration: const InputDecoration(
+                hintText: 'ذكر',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              dropdownColor: Colors.white,
+              style: const TextStyle(fontSize: 10, color: Colors.black),
+              items: const [
+                DropdownMenuItem(
+                  value: 'ذكر',
+                  child: Text(
+                    'ذكر',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Colors.black),
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'أنثى',
+                  child: Text(
+                    'أنثى',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Colors.black),
+                  ),
+                ),
+              ],
+              onChanged: (value) {
+                data['gender'] = value;
+                setState(() {});
+              },
+            ),
+          ),
+          SizedBox(
+            width: 80,
+            child: TextFormField(
+              controller: nationalityController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: 'يمني',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              onChanged: (value) {
+                data['nationality'] = value;
+              },
+            ),
+          ),
+          SizedBox(
+            width: 100,
+            child: TextFormField(
+              controller: nameController,
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                hintText: isPlaintiff ? 'اسم المدعى' : 'اسم المدعى عليه',
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+              maxLength: 70,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return const SizedBox.shrink();
+              },
+              onChanged: (value) {
+                data['name'] = value;
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -987,9 +1835,23 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                   DropdownButtonFormField<String>(
                     value: selectedGender,
                     decoration: const InputDecoration(labelText: 'الجنس *'),
+                    dropdownColor: Colors.white,
+                    style: const TextStyle(color: Colors.black),
                     items: const [
-                      DropdownMenuItem(value: 'male', child: Text('ذكر')),
-                      DropdownMenuItem(value: 'female', child: Text('أنثى')),
+                      DropdownMenuItem(
+                        value: 'male',
+                        child: Text(
+                          'ذكر',
+                          style: TextStyle(color: Colors.black),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'female',
+                        child: Text(
+                          'أنثى',
+                          style: TextStyle(color: Colors.black),
+                        ),
+                      ),
                     ],
                     onChanged: (v) {
                       setDialogState(() {
@@ -1310,78 +2172,289 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   }
 
   Widget _buildAttachmentsSection() {
+    final attachmentsToShow = _isEditMode ? _attachments : [];
+    final attachmentsDataToShow = _isEditMode ? [] : _attachmentsData;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'مستندات الدعوى',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_isUploadingAttachment)
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+        Text(
+          'مرفقات الدعوى (ترفق صورة من الوثائق)',
+          style: TextStyle(
+            fontSize: MediaQuery.of(context).size.width > 600 ? 18 : 16,
+            fontWeight: FontWeight.bold,
+          ),
+          textAlign: TextAlign.right,
+        ),
+        const SizedBox(height: 12),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: MediaQuery.of(context).size.width - 32,
+              ),
+              child: Column(
+                children: [
+                  // Table Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(width: 60, child: Text('خيارات', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('عدد الصفحات', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 150, child: Text('مضمون المستند ووجه الاستدلال', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 120, child: Text('تاريخه هجري - ليس إجباري', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 120, child: Text('تاريخه ميلادي', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 100, child: Text('نوع المستند', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                      ],
                     ),
                   ),
-                IconButton(
-                  icon: const Icon(Icons.attach_file, color: Colors.blue),
-                  onPressed: _isUploadingAttachment ? null : _showAddAttachmentDialog,
-                  tooltip: 'إضافة مستند',
-                ),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        
-        if (_isLoadingAttachments)
-          const Center(child: Padding(
-            padding: EdgeInsets.all(16.0),
-            child: CircularProgressIndicator(),
-          ))
-        else if (_attachments.isEmpty && !_isUploadingAttachment)
-          Card(
-            color: Colors.grey.shade50,
-            child: const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Center(
-                child: Text(
-                  'لا توجد مستندات مرفقة',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            ),
-          )
-        else
-          ..._attachments.map((attachment) => _buildAttachmentCard(attachment)),
-        if (_isUploadingAttachment && _attachments.isEmpty)
-          Card(
-            color: Colors.blue.shade50,
-            child: const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 16),
-                  Text('جاري رفع المستند...'),
+                  // Table Rows
+                  if (_isEditMode)
+                    ...(_isLoadingAttachments && attachmentsToShow.isEmpty
+                        ? [const Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Center(child: CircularProgressIndicator()),
+                          )]
+                        : attachmentsToShow.isEmpty
+                            ? [const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text('لا توجد مرفقات', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                              )]
+                            : attachmentsToShow.map((a) => _buildAttachmentRow(a)).toList()),
+                  if (!_isEditMode)
+                    ...attachmentsDataToShow.asMap().entries.map((entry) {
+                      return _buildAttachmentRowData(entry.value, entry.key);
+                    }).toList(),
                 ],
               ),
             ),
           ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              setState(() {
+                if (_isEditMode) {
+                  _showAddAttachmentDialog();
+                } else {
+                  _attachmentsData.add({});
+                }
+              });
+            },
+            icon: const Icon(Icons.add, color: Colors.white, size: 20),
+            label: const Text('+ إضافة مرفق', style: TextStyle(color: Colors.white, fontSize: 14)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+  
+  Widget _buildAttachmentRow(Map<String, dynamic> attachment) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 60,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 16, color: Colors.blue),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _showEditAttachmentDialog(attachment),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _deleteAttachment(attachment['id']),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: 80, child: Text('${attachment['page_count'] ?? 0}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10))),
+          SizedBox(width: 150, child: Text(attachment['content'] ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 120, child: Text(attachment['hijri_date'] ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 120, child: Text(
+            attachment['gregorian_date'] != null 
+                ? DateFormat('yyyy-MM-dd').format(DateTime.parse(attachment['gregorian_date']))
+                : '',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 10),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          )),
+          SizedBox(width: 100, child: Text(attachment['document_type_display'] ?? attachment['document_type'] ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildAttachmentRowData(Map<String, dynamic> data, int index) {
+    final docTypeController = TextEditingController(text: data['document_type'] ?? '');
+    final contentController = TextEditingController(text: data['content'] ?? '');
+    final pageCountController = TextEditingController(text: (data['page_count'] ?? '').toString());
+    final hijriDateController = TextEditingController(text: data['hijri_date'] ?? '1447/01/01');
+    DateTime? gregorianDate = data['gregorian_date'] != null 
+        ? DateTime.tryParse(data['gregorian_date'])
+        : null;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 60,
+            child: IconButton(
+              icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () {
+                setState(() {
+                  _attachmentsData.removeAt(index);
+                });
+              },
+            ),
+          ),
+          SizedBox(
+            width: 80,
+            child: TextFormField(
+              controller: pageCountController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: 'عدد الصفحات',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              keyboardType: TextInputType.number,
+              onChanged: (value) {
+                data['page_count'] = int.tryParse(value);
+              },
+            ),
+          ),
+          SizedBox(
+            width: 150,
+            child: TextFormField(
+              controller: contentController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: 'مضمون المستند ووجه',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              maxLength: 70,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return const SizedBox.shrink();
+              },
+              onChanged: (value) {
+                data['content'] = value;
+              },
+            ),
+          ),
+          SizedBox(
+            width: 120,
+            child: TextFormField(
+              controller: hijriDateController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: '1447/01/01',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              onChanged: (value) {
+                data['hijri_date'] = value;
+              },
+            ),
+          ),
+          SizedBox(
+            width: 120,
+            child: InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: gregorianDate ?? DateTime.now(),
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime.now(),
+                );
+                if (picked != null) {
+                  setState(() {
+                    gregorianDate = picked;
+                    data['gregorian_date'] = DateFormat('yyyy-MM-dd').format(picked);
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  gregorianDate != null 
+                      ? DateFormat('yyyy-MM-dd').format(gregorianDate!)
+                      : 'yyyy/MM/dd',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: gregorianDate != null ? Colors.black : Colors.grey,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 100,
+            child: TextFormField(
+              controller: docTypeController,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(
+                hintText: 'نوع المستند',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                isDense: true,
+              ),
+              style: const TextStyle(fontSize: 10),
+              maxLength: 70,
+              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
+                return const SizedBox.shrink();
+              },
+              onChanged: (value) {
+                data['document_type'] = value;
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
