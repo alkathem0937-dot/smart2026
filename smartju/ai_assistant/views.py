@@ -4,9 +4,18 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .services import AIAssistantService, RAGService
-from .services.ai_assistant_service import AIAssistantService as NewAIAssistantService
-from .services.rag_service import RAGService as NewRAGService
+# Import from old services.py for backward compatibility
+try:
+    from . import services as old_services_module
+    OldAIAssistantService = getattr(old_services_module, 'AIAssistantService', None)
+    OldRAGService = getattr(old_services_module, 'RAGService', None)
+except (ImportError, AttributeError):
+    OldAIAssistantService = None
+    OldRAGService = None
+
+# Import from new services package (explicit import from services directory)
+from .services.ai_assistant_service import AIAssistantService
+from .services.rag_service import RAGService
 from .serializers import ChatRequestSerializer, ChatResponseSerializer
 import logging
 import os
@@ -67,7 +76,7 @@ class AIChatView(APIView):
             try:
                 # Try new service first, fallback to old service
                 try:
-                    new_service = NewAIAssistantService()
+                    new_service = AIAssistantService()
                     ai_response_content = new_service.get_ai_response(user_query, conversation_history)
                     response_data = {
                         "ai_response": ai_response_content,

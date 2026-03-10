@@ -178,8 +178,8 @@ class HuggingFaceService:
         return "\n\n".join(prompt_parts)
 
 
-# استخدام RAGService من services.py الأصلي
-from .services import RAGService
+# استخدام RAGService من services package الجديد
+from .services.rag_service import RAGService
 
 
 class AIAssistantServiceGroq:
