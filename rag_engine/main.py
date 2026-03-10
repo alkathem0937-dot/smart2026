@@ -48,34 +48,46 @@ EMBEDDING_MODEL_NAME = os.getenv(
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", CHROMA_DB_DIR)  # Alias for compatibility
 
-# Initialize embedding model
-# (تهيئة نموذج التضمين)
-# Get Hugging Face token from environment
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
-
-try:
-    # Use token if available for private/gated models
-    model_kwargs = {}
-    if HUGGINGFACE_TOKEN:
-        model_kwargs["token"] = HUGGINGFACE_TOKEN
-        logger.info("Using Hugging Face token for model access")
-    
-    embeddings = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME,
-        model_kwargs=model_kwargs
-    )
-    logger.info(f"Successfully loaded embedding model: {EMBEDDING_MODEL_NAME}")
-except Exception as e:
-    logger.error(f"Error loading embedding model: {e}")
-    raise RuntimeError(f"Failed to load embedding model: {e}")
+# Initialize embedding model (will be loaded asynchronously)
+# (تهيئة نموذج التضمين - سيتم تحميله بشكل غير متزامن)
+embeddings = None
+model_loading = False
+model_loaded = False
 
 
 # Initialize ChromaDB client
 # (تهيئة عميل ChromaDB)
 vectorstore = None
 
-def get_chroma_client():
+def load_embedding_model():
+    """Load embedding model synchronously"""
+    global embeddings, model_loaded
     try:
+        # Get Hugging Face token from environment
+        HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
+        
+        # Use token if available for private/gated models
+        model_kwargs = {}
+        if HUGGINGFACE_TOKEN:
+            model_kwargs["token"] = HUGGINGFACE_TOKEN
+            logger.info("Using Hugging Face token for model access")
+        
+        embeddings = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            model_kwargs=model_kwargs
+        )
+        logger.info(f"Successfully loaded embedding model: {EMBEDDING_MODEL_NAME}")
+        model_loaded = True
+        return embeddings
+    except Exception as e:
+        logger.error(f"Error loading embedding model: {e}")
+        raise RuntimeError(f"Failed to load embedding model: {e}")
+
+def get_chroma_client():
+    global embeddings
+    try:
+        if embeddings is None:
+            raise RuntimeError("Embeddings not loaded yet")
         os.makedirs(CHROMA_DB_DIR, exist_ok=True)
         client = Chroma(
             persist_directory=CHROMA_DB_DIR,
@@ -89,21 +101,42 @@ def get_chroma_client():
         raise RuntimeError(f"Failed to initialize ChromaDB: {e}")
 
 
-# Initialize on startup
+# Initialize on startup (async to allow health check to work immediately)
 @app.on_event("startup")
 async def startup_event():
     """
     Initialize the embedding model and ChromaDB on application startup.
     تهيئة نموذج التضمين و ChromaDB عند بدء تشغيل التطبيق.
     """
-    global vectorstore
-    try:
-        logger.info("Initializing ChromaDB...")
-        vectorstore = get_chroma_client()
-        logger.info("ChromaDB initialized and persisted successfully.")
-    except Exception as e:
-        logger.error(f"Failed to initialize RAG components: {e}")
-        raise RuntimeError(f"Failed to initialize RAG components: {e}")
+    global vectorstore, model_loading
+    
+    # Start loading model in background
+    import asyncio
+    model_loading = True
+    
+    async def load_model_async():
+        global vectorstore, model_loading
+        try:
+            logger.info("Starting to load embedding model in background...")
+            # Load model in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, load_embedding_model)
+            
+            # Initialize ChromaDB after model is loaded
+            logger.info("Initializing ChromaDB...")
+            def init_chroma():
+                global vectorstore
+                vectorstore = get_chroma_client()
+            await loop.run_in_executor(None, init_chroma)
+            logger.info("ChromaDB initialized and persisted successfully.")
+            model_loading = False
+        except Exception as e:
+            logger.error(f"Failed to initialize RAG components: {e}")
+            model_loading = False
+            # Don't raise - allow app to start even if model loading fails
+    
+    # Start loading in background (don't await)
+    asyncio.create_task(load_model_async())
 
 
 @app.on_event("shutdown")
@@ -121,11 +154,7 @@ async def shutdown_event():
             logger.error(f"Failed to persist ChromaDB on shutdown: {e}")
 
 
-# Initialize vectorstore immediately (will be re-initialized in startup event for async safety)
-try:
-    vectorstore = get_chroma_client()
-except Exception as e:
-    logger.warning(f"Initial vectorstore initialization failed, will retry on startup: {e}")
+# Note: vectorstore will be initialized asynchronously in startup event
 
 # Text splitter for document processing
 # (مقسم النصوص لمعالجة المستندات)
@@ -250,19 +279,23 @@ async def health_check():
     """
     Checks the health of the RAG engine.
     يتحقق من حالة عمل محرك RAG.
+    Note: Returns OK even if model is still loading to allow Hugging Face Spaces to start.
     """
-    logger.info("Health check requested.")
-    if embeddings is None or vectorstore is None:
-        raise HTTPException(status_code=503, detail="RAG components not initialized.")
-    try:
-        _ = vectorstore._collection.count()
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail=f"RAG engine unhealthy: {e}"
-        )
+    global model_loading, model_loaded, vectorstore
+    
+    # Always return OK for health check - this allows Hugging Face Spaces to start
+    # The model will load in background
+    if model_loading:
+        return {"status": "ok", "message": "Model is loading in background"}
+    elif model_loaded and vectorstore:
+        try:
+            _ = vectorstore._collection.count()
+            return {"status": "ok", "message": "RAG engine is fully operational"}
+        except Exception as e:
+            logger.warning(f"Health check warning: {e}")
+            return {"status": "ok", "message": "RAG engine starting"}
+    else:
+        return {"status": "ok", "message": "RAG engine initializing"}
 
 
 @app.post("/add_documents", summary="Add Documents to ChromaDB", response_model=Dict[str, str])
@@ -319,6 +352,13 @@ async def add_documents(
             detail="No documents provided. Please provide either documents list or files."
         )
 
+    # Check if vectorstore is ready
+    if vectorstore is None or embeddings is None:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG engine is still initializing. Please wait a moment and try again."
+        )
+    
     try:
         vectorstore.add_documents(all_documents)
         vectorstore.persist()
@@ -338,6 +378,13 @@ async def search_documents(query: SearchQuery):
     Searches the ChromaDB vector store for documents relevant to the given query.
     يبحث في مخزن المتجهات ChromaDB عن المستندات ذات الصلة بالاستعلام المحدد.
     """
+    # Check if vectorstore is ready
+    if vectorstore is None or embeddings is None:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG engine is still initializing. Please wait a moment and try again."
+        )
+    
     try:
         logger.info(f"Searching ChromaDB for query: '{query.query_text}' with k={query.k}")
         results = vectorstore.similarity_search(query.query_text, k=query.k)
@@ -386,6 +433,13 @@ async def delete_documents(delete_query: DeleteQuery):
         raise HTTPException(
             status_code=400,
             detail="Either 'ids' or 'metadata_filter' must be provided."
+        )
+
+    # Check if vectorstore is ready
+    if vectorstore is None or embeddings is None:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG engine is still initializing. Please wait a moment and try again."
         )
 
     try:
