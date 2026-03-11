@@ -64,34 +64,30 @@ async def load_model_background():
 async def lifespan(app: FastAPI):
     """
     Lifespan context manager for FastAPI.
-    This ensures startup completes immediately (< 1 second).
+    CRITICAL: This must complete in < 1 second for Hugging Face Spaces health check.
     """
-    # Startup: Initialize ChromaDB directory and start background model loading
+    # CRITICAL: Yield immediately - do NOT do any operations before yield
+    # This ensures health check endpoints are available immediately
+    yield
+    
+    # After yield: Start background tasks (non-blocking)
+    import asyncio
+    
+    # Log that startup is complete
     logger.info("Application startup complete. Health check endpoints are ready.")
     
-    # Initialize ChromaDB directory first (fast operation)
+    # Initialize ChromaDB directory (fast operation, but do it after yield)
     try:
         os.makedirs(CHROMA_DB_DIR, exist_ok=True)
     except Exception as e:
         logger.warning(f"Could not create ChromaDB directory: {e}")
     
     # Start loading model in background (non-blocking)
-    import asyncio
     asyncio.create_task(load_model_background())
     
-    # Don't wait for model to load - health check must work immediately
-    # The model will load in background and endpoints will check readiness
-    
-    yield  # Application is running
-    
-    # Shutdown: Persist ChromaDB
-    global vectorstore
-    if vectorstore:
-        try:
-            vectorstore.persist()
-            logger.info("ChromaDB persisted successfully on shutdown.")
-        except Exception as e:
-            logger.error(f"Failed to persist ChromaDB on shutdown: {e}")
+    # Shutdown handler will be called when app stops
+    # Note: We can't use try/finally here because yield is in the middle
+    # Shutdown will be handled by a separate mechanism if needed
 
 app = FastAPI(
     title="SmartJudi2 RAG Engine",
