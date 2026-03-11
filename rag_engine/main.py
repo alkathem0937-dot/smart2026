@@ -38,10 +38,11 @@ app = FastAPI(
 
 # Embedding model name
 # (اسم نموذج التضمين)
-# Note: Using intfloat/multilingual-e5-large instead of sentence-transformers/ prefix
+# Note: Using base model for faster loading on Hugging Face Spaces
+# You can override with EMBEDDING_MODEL_NAME environment variable
 EMBEDDING_MODEL_NAME = os.getenv(
     "EMBEDDING_MODEL_NAME",
-    "intfloat/multilingual-e5-large"  # Changed from sentence-transformers/multilingual-e5-large
+    "intfloat/multilingual-e5-base"  # Changed from large to base for faster startup
 )
 
 # Directory for ChromaDB persistence
