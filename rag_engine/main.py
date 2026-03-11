@@ -112,8 +112,15 @@ async def startup_event():
     
     Note: Model loading happens in background to allow Hugging Face Spaces
     health checks to pass immediately.
+    
+    IMPORTANT: This function must complete quickly (< 5 seconds) to allow
+    Hugging Face Spaces health check to pass. All heavy operations are
+    deferred to background tasks.
     """
     global vectorstore, model_loading, model_loaded
+    
+    # Log startup immediately
+    logger.info("Application startup complete. Health check endpoints are ready.")
     
     # Initialize ChromaDB directory first (fast operation)
     try:
@@ -126,10 +133,12 @@ async def startup_event():
     model_loading = True
     model_loaded = False  # Ensure this is set correctly
     
+    # Log that we're starting background model loading
+    logger.info("Starting to load embedding model in background...")
+    
     async def load_model_async():
         global vectorstore, model_loading, model_loaded
         try:
-            logger.info("Starting to load embedding model in background...")
             # Load model in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, load_embedding_model)
@@ -152,8 +161,8 @@ async def startup_event():
     # Start loading in background (don't await - this allows health check to work immediately)
     asyncio.create_task(load_model_async())
     
-    # Log that startup is complete (health check can now respond)
-    logger.info("Application startup complete. Health check endpoints are ready.")
+    # Don't wait for model to load - health check must work immediately
+    # The model will load in background and endpoints will check readiness
 
 
 @app.on_event("shutdown")
