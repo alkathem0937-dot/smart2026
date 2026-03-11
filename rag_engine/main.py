@@ -168,7 +168,24 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Health check with model status"""
+    global model_loading, model_loaded
+    
+    status = {
+        "status": "ok",
+        "model_loading": model_loading,
+        "model_loaded": model_loaded,
+        "ready": model_loaded and not model_loading
+    }
+    
+    if model_loading:
+        status["message"] = "Model is loading in background..."
+    elif model_loaded:
+        status["message"] = "RAG engine is fully operational"
+    else:
+        status["message"] = "RAG engine initializing"
+    
+    return status
 
 @app.get("/healthz")
 async def healthz():
