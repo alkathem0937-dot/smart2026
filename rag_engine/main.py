@@ -107,15 +107,25 @@ async def startup_event():
     """
     Initialize the embedding model and ChromaDB on application startup.
     تهيئة نموذج التضمين و ChromaDB عند بدء تشغيل التطبيق.
-    """
-    global vectorstore, model_loading
     
-    # Start loading model in background
+    Note: Model loading happens in background to allow Hugging Face Spaces
+    health checks to pass immediately.
+    """
+    global vectorstore, model_loading, model_loaded
+    
+    # Initialize ChromaDB directory first (fast operation)
+    try:
+        os.makedirs(CHROMA_DB_DIR, exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Could not create ChromaDB directory: {e}")
+    
+    # Start loading model in background (non-blocking)
     import asyncio
     model_loading = True
+    model_loaded = False  # Ensure this is set correctly
     
     async def load_model_async():
-        global vectorstore, model_loading
+        global vectorstore, model_loading, model_loaded
         try:
             logger.info("Starting to load embedding model in background...")
             # Load model in thread pool to avoid blocking
@@ -130,13 +140,18 @@ async def startup_event():
             await loop.run_in_executor(None, init_chroma)
             logger.info("ChromaDB initialized and persisted successfully.")
             model_loading = False
+            model_loaded = True
         except Exception as e:
-            logger.error(f"Failed to initialize RAG components: {e}")
+            logger.error(f"Failed to initialize RAG components: {e}", exc_info=True)
             model_loading = False
+            model_loaded = False
             # Don't raise - allow app to start even if model loading fails
     
-    # Start loading in background (don't await)
+    # Start loading in background (don't await - this allows health check to work immediately)
     asyncio.create_task(load_model_async())
+    
+    # Log that startup is complete (health check can now respond)
+    logger.info("Application startup complete. Health check endpoints are ready.")
 
 
 @app.on_event("shutdown")
@@ -274,6 +289,14 @@ class HealthResponse(BaseModel):
 
 # --- API Endpoints ---
 
+@app.get("/", summary="Root endpoint", response_model=Dict[str, str])
+async def root():
+    """
+    Root endpoint for health check (used by Hugging Face Spaces).
+    نقطة النهاية الجذرية للتحقق من الصحة (تُستخدم من قبل Hugging Face Spaces).
+    """
+    return {"status": "ok", "message": "RAG Engine is running"}
+
 @app.get("/health", summary="Health Check", response_model=Dict[str, str])
 async def health_check():
     """
@@ -283,17 +306,15 @@ async def health_check():
     """
     global model_loading, model_loaded, vectorstore
     
-    # Always return OK for health check - this allows Hugging Face Spaces to start
+    # Always return OK immediately for health check - this allows Hugging Face Spaces to start
     # The model will load in background
+    # Don't do any expensive operations here - just return OK
     if model_loading:
         return {"status": "ok", "message": "Model is loading in background"}
     elif model_loaded and vectorstore:
-        try:
-            _ = vectorstore._collection.count()
-            return {"status": "ok", "message": "RAG engine is fully operational"}
-        except Exception as e:
-            logger.warning(f"Health check warning: {e}")
-            return {"status": "ok", "message": "RAG engine starting"}
+        # Don't call count() here - it might be slow
+        # Just check if vectorstore exists
+        return {"status": "ok", "message": "RAG engine is fully operational"}
     else:
         return {"status": "ok", "message": "RAG engine initializing"}
 
