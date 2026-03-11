@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import List, Dict, Any
+from contextlib import asynccontextmanager
 import os
 import logging
 from dotenv import load_dotenv
@@ -28,10 +29,75 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Background task for model loading
+# (مهمة خلفية لتحميل النموذج)
+async def load_model_background():
+    """Load model in background without blocking startup"""
+    global vectorstore, model_loading, model_loaded
+    import asyncio
+    
+    model_loading = True
+    model_loaded = False
+    
+    try:
+        logger.info("Starting to load embedding model in background...")
+        # Load model in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, load_embedding_model)
+        
+        # Initialize ChromaDB after model is loaded
+        logger.info("Initializing ChromaDB...")
+        def init_chroma():
+            global vectorstore
+            vectorstore = get_chroma_client()
+        await loop.run_in_executor(None, init_chroma)
+        logger.info("ChromaDB initialized and persisted successfully.")
+        model_loading = False
+        model_loaded = True
+    except Exception as e:
+        logger.error(f"Failed to initialize RAG components: {e}", exc_info=True)
+        model_loading = False
+        model_loaded = False
+        # Don't raise - allow app to start even if model loading fails
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager for FastAPI.
+    This ensures startup completes immediately (< 1 second).
+    """
+    # Startup: Initialize ChromaDB directory and start background model loading
+    logger.info("Application startup complete. Health check endpoints are ready.")
+    
+    # Initialize ChromaDB directory first (fast operation)
+    try:
+        os.makedirs(CHROMA_DB_DIR, exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Could not create ChromaDB directory: {e}")
+    
+    # Start loading model in background (non-blocking)
+    import asyncio
+    asyncio.create_task(load_model_background())
+    
+    # Don't wait for model to load - health check must work immediately
+    # The model will load in background and endpoints will check readiness
+    
+    yield  # Application is running
+    
+    # Shutdown: Persist ChromaDB
+    global vectorstore
+    if vectorstore:
+        try:
+            vectorstore.persist()
+            logger.info("ChromaDB persisted successfully on shutdown.")
+        except Exception as e:
+            logger.error(f"Failed to persist ChromaDB on shutdown: {e}")
+
 app = FastAPI(
     title="SmartJudi2 RAG Engine",
     description="FastAPI service for Retrieval-Augmented Generation using ChromaDB and HuggingFace Embeddings.",
     version="1.0.0",
+    lifespan=lifespan,  # Use lifespan instead of @app.on_event
 )
 
 # --- Configuration --- #
@@ -103,81 +169,8 @@ def get_chroma_client():
         raise RuntimeError(f"Failed to initialize ChromaDB: {e}")
 
 
-# Initialize on startup (async to allow health check to work immediately)
-@app.on_event("startup")
-async def startup_event():
-    """
-    Initialize the embedding model and ChromaDB on application startup.
-    تهيئة نموذج التضمين و ChromaDB عند بدء تشغيل التطبيق.
-    
-    Note: Model loading happens in background to allow Hugging Face Spaces
-    health checks to pass immediately.
-    
-    IMPORTANT: This function must complete quickly (< 5 seconds) to allow
-    Hugging Face Spaces health check to pass. All heavy operations are
-    deferred to background tasks.
-    """
-    global vectorstore, model_loading, model_loaded
-    
-    # Log startup immediately
-    logger.info("Application startup complete. Health check endpoints are ready.")
-    
-    # Initialize ChromaDB directory first (fast operation)
-    try:
-        os.makedirs(CHROMA_DB_DIR, exist_ok=True)
-    except Exception as e:
-        logger.warning(f"Could not create ChromaDB directory: {e}")
-    
-    # Start loading model in background (non-blocking)
-    import asyncio
-    model_loading = True
-    model_loaded = False  # Ensure this is set correctly
-    
-    # Log that we're starting background model loading
-    logger.info("Starting to load embedding model in background...")
-    
-    async def load_model_async():
-        global vectorstore, model_loading, model_loaded
-        try:
-            # Load model in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, load_embedding_model)
-            
-            # Initialize ChromaDB after model is loaded
-            logger.info("Initializing ChromaDB...")
-            def init_chroma():
-                global vectorstore
-                vectorstore = get_chroma_client()
-            await loop.run_in_executor(None, init_chroma)
-            logger.info("ChromaDB initialized and persisted successfully.")
-            model_loading = False
-            model_loaded = True
-        except Exception as e:
-            logger.error(f"Failed to initialize RAG components: {e}", exc_info=True)
-            model_loading = False
-            model_loaded = False
-            # Don't raise - allow app to start even if model loading fails
-    
-    # Start loading in background (don't await - this allows health check to work immediately)
-    asyncio.create_task(load_model_async())
-    
-    # Don't wait for model to load - health check must work immediately
-    # The model will load in background and endpoints will check readiness
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    Persist ChromaDB on application shutdown.
-    حفظ ChromaDB عند إغلاق التطبيق.
-    """
-    global vectorstore
-    if vectorstore:
-        try:
-            vectorstore.persist()
-            logger.info("ChromaDB persisted successfully on shutdown.")
-        except Exception as e:
-            logger.error(f"Failed to persist ChromaDB on shutdown: {e}")
+# Note: Startup and shutdown are now handled by lifespan context manager above
+# (ملاحظة: بدء التشغيل والإغلاق يتم التعامل معهما الآن بواسطة lifespan context manager أعلاه)
 
 
 # Note: vectorstore will be initialized asynchronously in startup event
