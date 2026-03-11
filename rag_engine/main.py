@@ -64,30 +64,37 @@ async def load_model_background():
 async def lifespan(app: FastAPI):
     """
     Lifespan context manager for FastAPI.
-    CRITICAL: This must complete in < 1 second for Hugging Face Spaces health check.
+    CRITICAL: Startup code must complete in < 1 second for Hugging Face Spaces health check.
     """
-    # CRITICAL: Yield immediately - do NOT do any operations before yield
-    # This ensures health check endpoints are available immediately
-    yield
-    
-    # After yield: Start background tasks (non-blocking)
+    # Startup: Do minimal setup and start background tasks
+    # CRITICAL: Keep this section as fast as possible (< 1 second)
     import asyncio
     
-    # Log that startup is complete
-    logger.info("Application startup complete. Health check endpoints are ready.")
-    
-    # Initialize ChromaDB directory (fast operation, but do it after yield)
+    # Initialize ChromaDB directory (fast operation)
     try:
         os.makedirs(CHROMA_DB_DIR, exist_ok=True)
     except Exception as e:
         logger.warning(f"Could not create ChromaDB directory: {e}")
     
     # Start loading model in background (non-blocking)
+    # This must be done BEFORE yield so it actually runs
     asyncio.create_task(load_model_background())
     
-    # Shutdown handler will be called when app stops
-    # Note: We can't use try/finally here because yield is in the middle
-    # Shutdown will be handled by a separate mechanism if needed
+    # Log that startup is complete
+    logger.info("Application startup complete. Health check endpoints are ready.")
+    
+    # Yield: Application is now running
+    # Health check endpoints are available immediately
+    yield
+    
+    # Shutdown: Persist ChromaDB when app stops
+    global vectorstore
+    if vectorstore:
+        try:
+            vectorstore.persist()
+            logger.info("ChromaDB persisted successfully on shutdown.")
+        except Exception as e:
+            logger.error(f"Failed to persist ChromaDB on shutdown: {e}")
 
 app = FastAPI(
     title="SmartJudi2 RAG Engine",
