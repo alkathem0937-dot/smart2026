@@ -2,7 +2,7 @@
 # محرك RAG لاسترجاع المستندات القانونية
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import os
@@ -301,11 +301,22 @@ async def root():
     """
     # Return immediately - no global variable access, no conditionals, no imports
     # This ensures the fastest possible response for Hugging Face Spaces health check
-    # Use JSONResponse for explicit JSON content type
+    # Use JSONResponse for explicit JSON content type and status code
     return JSONResponse(
         content={"status": "ok", "message": "RAG Engine is running"},
-        status_code=200
+        status_code=200,
+        headers={"Content-Type": "application/json"}
     )
+
+@app.get("/healthz", summary="Simple health check", include_in_schema=False)
+async def healthz():
+    """
+    Ultra-simple health check endpoint (alternative for Hugging Face Spaces).
+    نقطة نهاية بسيطة جداً للتحقق من الصحة (بديل لـ Hugging Face Spaces).
+    Returns 200 OK immediately with minimal processing.
+    """
+    # Simplest possible response - just return 200 OK
+    return Response(status_code=200, content="OK", media_type="text/plain")
 
 @app.get("/health", summary="Health Check", response_model=Dict[str, str])
 async def health_check():
