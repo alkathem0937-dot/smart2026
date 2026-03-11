@@ -2,6 +2,7 @@
 # محرك RAG لاسترجاع المستندات القانونية
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import os
@@ -289,13 +290,21 @@ class HealthResponse(BaseModel):
 
 # --- API Endpoints ---
 
-@app.get("/", summary="Root endpoint", response_model=Dict[str, str])
+@app.get("/", summary="Root endpoint", include_in_schema=False)
 async def root():
     """
     Root endpoint for health check (used by Hugging Face Spaces).
     نقطة النهاية الجذرية للتحقق من الصحة (تُستخدم من قبل Hugging Face Spaces).
+    Returns immediately without any processing to ensure fast response.
+    This is the primary endpoint Hugging Face Spaces checks for health.
     """
-    return {"status": "ok", "message": "RAG Engine is running"}
+    # Return immediately - no global variable access, no conditionals, no imports
+    # This ensures the fastest possible response for Hugging Face Spaces health check
+    # Use JSONResponse for explicit JSON content type
+    return JSONResponse(
+        content={"status": "ok", "message": "RAG Engine is running"},
+        status_code=200
+    )
 
 @app.get("/health", summary="Health Check", response_model=Dict[str, str])
 async def health_check():
