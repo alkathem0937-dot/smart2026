@@ -13,6 +13,7 @@ import '../models/party_model.dart';
 import '../config/api_config.dart';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 /// Lawsuit Detail Screen - Updated to support legal templates
 class LawsuitDetailScreen extends StatefulWidget {
@@ -152,24 +153,54 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       
       if (mounted) {
         List<dynamic>? data;
-        if (response is Map<String, dynamic>) {
+        
+        // معالجة الاستجابة - قد تأتي كـ List مباشرة أو كـ Map مع 'results'
+        if (response is List) {
+          data = response;
+        } else if (response is Map<String, dynamic>) {
           if (response['results'] != null) {
             data = response['results'] as List?;
+          } else if (response['data'] != null) {
+            data = response['data'] as List?;
           }
+          // إذا كانت الاستجابة Map مباشرة بدون 'results' أو 'data'، تجاهلها
+          // لأن API يجب أن يعيد List أو Map مع 'results'
         }
         
+        if (kDebugMode) {
+          developer.log('Loaded ${data?.length ?? 0} governorates', name: 'LawsuitDetailScreen');
+        }
+        
+        final mappedGovernorates = (data ?? []).map((e) {
+          try {
+            return {
+              'id': e['id'],
+              'name': e['name'] ?? '',
+              'courts': e['courts'] ?? [], // حفظ المحاكم مع كل محافظة
+              'courts_count': e['courts_count'] ?? 0,
+            };
+          } catch (err) {
+            developer.log('Error mapping governorate: $err', name: 'LawsuitDetailScreen');
+            return null;
+          }
+        }).where((e) => e != null).cast<Map<String, dynamic>>().toList();
+        
         setState(() {
-          _governorates = (data ?? []).map((e) => {
-            'id': e['id'],
-            'name': e['name'] ?? '',
-            'courts': e['courts'] ?? [], // حفظ المحاكم مع كل محافظة
-            'courts_count': e['courts_count'] ?? 0,
-          }).toList();
+          _governorates = mappedGovernorates;
           _isLoadingGovernorates = false;
         });
+        
+        if (kDebugMode) {
+          if (_governorates.isEmpty) {
+            developer.log('Warning: No governorates loaded. Response type: ${response.runtimeType}', name: 'LawsuitDetailScreen');
+            developer.log('Response: $response', name: 'LawsuitDetailScreen');
+          } else {
+            developer.log('Successfully loaded ${_governorates.length} governorates', name: 'LawsuitDetailScreen');
+          }
+        }
       }
-    } catch (e) {
-      developer.log('Error loading governorates: $e', name: 'LawsuitDetailScreen');
+    } catch (e, stackTrace) {
+      developer.log('Error loading governorates: $e\n$stackTrace', name: 'LawsuitDetailScreen');
       if (mounted) {
         setState(() {
           _isLoadingGovernorates = false;
@@ -1060,7 +1091,9 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                       Expanded(
                         child: _isLoadingGovernorates
                             ? const Center(child: CircularProgressIndicator())
-                            : DropdownButtonFormField<String>(
+                            : _governorates.isEmpty
+                                ? const Text('لا توجد محافظات متاحة', style: TextStyle(color: Colors.grey))
+                                : DropdownButtonFormField<String>(
                                 value: _selectedGovernorate,
                                 decoration: const InputDecoration(
                                   labelText: 'المحافظة',
@@ -1101,7 +1134,11 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                       Expanded(
                         child: _isLoadingCourts
                             ? const Center(child: CircularProgressIndicator())
-                            : DropdownButtonFormField<int>(
+                            : _courts.isEmpty && _selectedGovernorateId == null
+                                ? const Text('اختر المحافظة أولاً', style: TextStyle(color: Colors.grey))
+                                : _courts.isEmpty
+                                    ? const Text('لا توجد محاكم متاحة', style: TextStyle(color: Colors.grey))
+                                    : DropdownButtonFormField<int>(
                                 value: _selectedCourtId,
                                 decoration: const InputDecoration(
                                   labelText: 'المحكمة *',
@@ -1134,7 +1171,21 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                     children: [
                       _isLoadingGovernorates
                           ? const Center(child: CircularProgressIndicator())
-                          : DropdownButtonFormField<String>(
+                          : _governorates.isEmpty
+                              ? Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.error_outline, color: Colors.grey, size: 24),
+                                    const SizedBox(height: 8),
+                                    const Text('لا توجد محافظات متاحة', style: TextStyle(color: Colors.grey)),
+                                    const SizedBox(height: 4),
+                                    TextButton(
+                                      onPressed: () => _loadGovernorates(),
+                                      child: const Text('إعادة المحاولة'),
+                                    ),
+                                  ],
+                                )
+                              : DropdownButtonFormField<String>(
                               value: _selectedGovernorate,
                               decoration: const InputDecoration(
                                 labelText: 'المحافظة',
@@ -1150,13 +1201,34 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                               onChanged: (value) {
                                 setState(() {
                                   _selectedGovernorate = value;
+                                  // البحث عن ID المحافظة المختارة
+                                  final selectedGov = _governorates.firstWhere(
+                                    (gov) => gov['name'] == value,
+                                    orElse: () => {},
+                                  );
+                                  _selectedGovernorateId = selectedGov['id'] as int?;
+                                  // إعادة تعيين المحكمة المختارة
+                                  _selectedCourtId = null;
                                 });
+                                // تحميل المحاكم الخاصة بالمحافظة المختارة
+                                if (_selectedGovernorateId != null) {
+                                  _loadCourts(governorateId: _selectedGovernorateId);
+                                } else {
+                                  // إذا لم يتم العثور على المحافظة، مسح قائمة المحاكم
+                                  setState(() {
+                                    _courts = [];
+                                  });
+                                }
                               },
                             ),
                       const SizedBox(height: 16),
                       _isLoadingCourts
                           ? const Center(child: CircularProgressIndicator())
-                          : DropdownButtonFormField<int>(
+                          : _courts.isEmpty && _selectedGovernorateId == null
+                              ? const Text('اختر المحافظة أولاً', style: TextStyle(color: Colors.grey))
+                              : _courts.isEmpty
+                                  ? const Text('لا توجد محاكم متاحة', style: TextStyle(color: Colors.grey))
+                                  : DropdownButtonFormField<int>(
                               value: _selectedCourtId,
                               decoration: const InputDecoration(
                                 labelText: 'المحكمة *',
