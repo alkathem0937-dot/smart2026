@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
@@ -53,6 +55,14 @@ void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     
+    // إعداد URL strategy لـ Flutter Web
+    // هذا يضمن أن التطبيق يعمل بشكل صحيح عند فتح الرابط مباشرة
+    if (kIsWeb) {
+      // استخدام hash routing للتوافق مع جميع الخوادم
+      // يمكن تغييره إلى PathUrlStrategy() إذا كان الخادم يدعم URL rewriting
+      usePathUrlStrategy();
+    }
+    
     final prefs = await SharedPreferences.getInstance();
     final bool showOnboarding = prefs.getBool('onboarding_completed') != true;
 
@@ -87,6 +97,8 @@ class MyApp extends StatelessWidget {
           return MaterialApp(
             title: 'SmartJudi',
             debugShowCheckedModeBanner: false,
+            // إعداد initial route للويب
+            initialRoute: kIsWeb ? '/' : null,
             theme: ThemeData(
               useMaterial3: true,
               fontFamily: 'Cairo', // تأكد من وجود الخط في pubspec.yaml
@@ -107,9 +119,19 @@ class MyApp extends StatelessWidget {
                 ),
               ),
             ),
-            home: showOnboarding ? const OnboardingScreen() : const AuthWrapper(),
-
+            // استخدام routes بدلاً من home للويب لضمان عمل URL routing بشكل صحيح
+            home: kIsWeb ? null : (showOnboarding ? const OnboardingScreen() : const AuthWrapper()),
+            onGenerateRoute: (settings) {
+              // إذا كان الويب وتم فتح الرابط مباشرة، تأكد من عرض الصفحة الصحيحة
+              if (kIsWeb && settings.name == '/') {
+                return MaterialPageRoute(
+                  builder: (_) => showOnboarding ? const OnboardingScreen() : const AuthWrapper(),
+                );
+              }
+              return null;
+            },
             routes: {
+              '/': (context) => showOnboarding ? const OnboardingScreen() : const AuthWrapper(),
               '/login': (context) => const LoginScreen(),
               '/register': (context) => const RegisterScreen(),
               '/home': (context) => const HomeScreen(),

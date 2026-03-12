@@ -43,11 +43,19 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
 # CORS settings for production
+# Allow Flutter Web and other Render domains
 CORS_ALLOWED_ORIGINS_ENV = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if CORS_ALLOWED_ORIGINS_ENV:
-    CORS_ALLOWED_ORIGINS = CORS_ALLOWED_ORIGINS_ENV.split(',')
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS_ENV.split(',') if origin.strip()]
     CORS_ALLOW_ALL_ORIGINS = False
 else:
+    # Default: Allow all Render domains (for Flutter Web)
     CORS_ALLOWED_ORIGINS = []
+    # Allow all Render domains by default
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*\.onrender\.com$",
+    ]
     CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins by default if not specified
 
+# Allow credentials for authenticated requests
+CORS_ALLOW_CREDENTIALS = True
