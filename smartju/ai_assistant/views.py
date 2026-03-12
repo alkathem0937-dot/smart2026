@@ -107,8 +107,12 @@ class AIChatView(APIView):
                 return Response(response_serializer.data, status=status.HTTP_200_OK)
             except Exception as e:
                 logger.exception(f"Error in AI chat view: {e}")
+                # Provide more user-friendly error messages
+                error_message = str(e)
+                if "GROQ_API_KEY" in error_message or "API key" in error_message.lower() or "credentials" in error_message.lower() or "دخول" in error_message:
+                    error_message = "عذراً، يرجى التحقق من إعدادات API Key. تأكد من إضافة GROQ_API_KEY أو HUGGINGFACE_API_KEY إلى ملف .env"
                 return Response(
-                    {"detail": str(e)},
+                    {"detail": error_message},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
