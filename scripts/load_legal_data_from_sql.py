@@ -323,6 +323,8 @@ def index_documents_to_rag(chunked_documents: List[Dict[str, Any]]) -> bool:
     """
     Indexes chunked documents into the Hugging Face RAG API.
     يفهرس المستندات المقسمة إلى واجهة برمجة تطبيقات RAG المستضافة على Hugging Face.
+    
+    Note: The API expects file uploads, so we create temporary text files for each batch.
     """
     if not RAG_API_URL:
         logger.error("RAG_API_URL is not set. Cannot index documents.")
@@ -331,7 +333,7 @@ def index_documents_to_rag(chunked_documents: List[Dict[str, Any]]) -> bool:
     add_docs_url = f"{RAG_API_URL}/add_documents"
     
     # Process in batches to avoid overwhelming the API
-    batch_size = 50
+    batch_size = 20  # Smaller batches for file uploads
     total_batches = (len(chunked_documents) + batch_size - 1) // batch_size
     
     # Progress bar for indexing
@@ -341,6 +343,9 @@ def index_documents_to_rag(chunked_documents: List[Dict[str, Any]]) -> bool:
     else:
         batch_range = range(0, len(chunked_documents), batch_size)
     
+    import tempfile
+    import io
+    
     for i in batch_range:
         batch = chunked_documents[i:i + batch_size]
         batch_num = (i // batch_size) + 1
@@ -349,10 +354,37 @@ def index_documents_to_rag(chunked_documents: List[Dict[str, Any]]) -> bool:
             logger.info(f"Indexing batch {batch_num}/{total_batches} ({len(batch)} documents)...")
         
         try:
-            response = rag_api_client.post(add_docs_url, json=batch, timeout=120)
+            # Create temporary text files for each document in the batch
+            files = []
+            for idx, doc in enumerate(batch):
+                # Get content from document - check both possible keys
+                content = doc.get('page_content', '') or doc.get('article_text', '')
+                if not content or not content.strip():
+                    continue
+                
+                # Create file-like object
+                filename = f"doc_{batch_num}_{idx}.txt"
+                file_content = content.encode('utf-8')
+                files.append(('files', (filename, file_content, 'text/plain')))
+            
+            if not files:
+                logger.warning(f"No valid documents in batch {batch_num}, skipping...")
+                continue
+            
+            # Send files as multipart/form-data
+            # Note: requests library handles multiple files with same field name automatically
+            response = rag_api_client.post(
+                add_docs_url,
+                files=files,
+                timeout=180  # Increased timeout for file uploads
+            )
             response.raise_for_status()
+            
             if not HAS_TQDM:
-                logger.info(f"Successfully indexed batch {batch_num}: {response.json()}")
+                result = response.json()
+                docs_added = result.get('documents_added', len(files))
+                logger.info(f"✅ Successfully indexed batch {batch_num}: {docs_added} documents added")
+                
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to index batch {batch_num} to RAG engine: {e}")
             if hasattr(e, 'response') and e.response is not None:
