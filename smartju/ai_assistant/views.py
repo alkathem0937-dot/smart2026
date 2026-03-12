@@ -73,6 +73,10 @@ class AIChatView(APIView):
             conversation_history = serializer.validated_data.get('conversation_history', [])
 
             logger.info(f"Received chat query: {user_query}")
+            # Debug: Log API key status (without showing the actual key)
+            groq_key = os.getenv("GROQ_API_KEY")
+            logger.info(f"GROQ_API_KEY present: {bool(groq_key)}")
+            logger.info(f"GROQ_API_KEY length: {len(groq_key) if groq_key else 0}")
             try:
                 # Try new service first, fallback to old service
                 try:
