@@ -4,6 +4,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 # Import from old services.py for backward compatibility
 try:
     from . import services as old_services_module
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class AIChatView(APIView):
     """نقطة نهاية للدردشة مع المساعد الذكي"""
+    permission_classes = [AllowAny]  # Allow access without authentication
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -124,6 +126,7 @@ class AIChatView(APIView):
 
 class AddLegalDocumentsView(APIView):
     """نقطة نهاية لإضافة مستندات قانونية إلى محرك RAG"""
+    permission_classes = [AllowAny]  # Allow access without authentication
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -181,6 +184,7 @@ class AddLegalDocumentsView(APIView):
 
 class DeleteLegalDocumentsView(APIView):
     """نقطة نهاية لحذف مستندات قانونية من محرك RAG"""
+    permission_classes = [AllowAny]  # Allow access without authentication
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
