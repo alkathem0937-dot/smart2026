@@ -34,6 +34,8 @@ migrate_working_dir/
 /build/
 # Exception: Allow build/web for Render deployment
 !/build/web/
+# Exception: Allow build/web for Render deployment
+!/build/web/
 
 # Symbolication related
 app.*.symbols
