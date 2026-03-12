@@ -44,6 +44,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   String? _selectedCaseType;
   String? _selectedCaseStatus;
   String? _selectedGovernorate;
+  int? _selectedGovernorateId; // إضافة ID المحافظة
   int? _selectedCourtId;
   DateTime? _filingDateGregorian;
   String? _filingDateHijri;
@@ -108,10 +109,10 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       _loadTemplates(_selectedCaseType!);
     }
     
-    // Load governorates and courts
+    // Load governorates only (courts will be loaded when governorate is selected)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadGovernorates();
-      _loadCourts();
+      // في وضع التعديل، سيتم تحميل المحاكم من _loadLawsuit
     });
   }
 
@@ -161,6 +162,8 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
           _governorates = (data ?? []).map((e) => {
             'id': e['id'],
             'name': e['name'] ?? '',
+            'courts': e['courts'] ?? [], // حفظ المحاكم مع كل محافظة
+            'courts_count': e['courts_count'] ?? 0,
           }).toList();
           _isLoadingGovernorates = false;
         });
@@ -175,7 +178,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     }
   }
   
-  Future<void> _loadCourts() async {
+  Future<void> _loadCourts({int? governorateId}) async {
     if (!mounted) return;
     setState(() {
       _isLoadingCourts = true;
@@ -183,7 +186,43 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final response = await authProvider.apiService.getCourts();
+      
+      // إذا تم تحديد محافظة، استخدم المحاكم من استجابة المحافظة
+      if (governorateId != null) {
+        // البحث عن المحافظة في القائمة المحملة
+        final governorate = _governorates.firstWhere(
+          (gov) => gov['id'] == governorateId,
+          orElse: () => {},
+        );
+        
+        if (governorate.isNotEmpty && governorate['courts'] != null) {
+          // استخدام المحاكم من استجابة المحافظة
+          final courtsData = governorate['courts'] as List?;
+          if (mounted) {
+            setState(() {
+              _courts = (courtsData ?? []).map((e) => {
+                'id': e['id'],
+                'name': e['name'] ?? '',
+              }).toList();
+              _isLoadingCourts = false;
+              // إعادة تعيين المحكمة المختارة إذا لم تكن موجودة في القائمة الجديدة
+              if (_selectedCourtId != null && 
+                  !_courts.any((c) => c['id'] == _selectedCourtId)) {
+                _selectedCourtId = null;
+              }
+            });
+          }
+          return;
+        }
+      }
+      
+      // إذا لم تكن المحاكم متوفرة من المحافظة، جلبها من API
+      Map<String, String>? queryParams;
+      if (governorateId != null) {
+        queryParams = {'governorate': governorateId.toString()};
+      }
+      
+      final response = await authProvider.apiService.getCourts(queryParams: queryParams);
       
       if (mounted) {
         List<dynamic>? data;
@@ -199,6 +238,11 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
             'name': e['court_name'] ?? e['name'] ?? '',
           }).toList();
           _isLoadingCourts = false;
+          // إعادة تعيين المحكمة المختارة إذا لم تكن موجودة في القائمة الجديدة
+          if (_selectedCourtId != null && 
+              !_courts.any((c) => c['id'] == _selectedCourtId)) {
+            _selectedCourtId = null;
+          }
         });
       }
     } catch (e) {
@@ -216,12 +260,30 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     await provider.loadLawsuit(widget.lawsuitId!);
     final lawsuit = provider.selectedLawsuit;
     if (lawsuit != null) {
+      // انتظار تحميل المحافظات أولاً
+      if (_governorates.isEmpty) {
+        await _loadGovernorates();
+      }
+      
       _caseNumberController.text = lawsuit.caseNumber;
       _subjectController.text = lawsuit.subject ?? '';
       _descriptionController.text = lawsuit.description ?? '';
       _selectedCaseType = lawsuit.caseType;
       _selectedCaseStatus = lawsuit.caseStatus ?? 'جديد';
       _selectedGovernorate = lawsuit.governorate;
+      
+      // البحث عن ID المحافظة من القائمة المحملة
+      if (_selectedGovernorate != null) {
+        final selectedGov = _governorates.firstWhere(
+          (gov) => gov['name'] == _selectedGovernorate,
+          orElse: () => {},
+        );
+        _selectedGovernorateId = selectedGov['id'] as int?;
+        // تحميل المحاكم الخاصة بالمحافظة
+        if (_selectedGovernorateId != null) {
+          await _loadCourts(governorateId: _selectedGovernorateId);
+        }
+      }
       _selectedCourtId = lawsuit.courtId;
       _filingDateGregorian = lawsuit.filingDate;
       if (_filingDateGregorian != null) {
@@ -1014,7 +1076,24 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedGovernorate = value;
+                                    // البحث عن ID المحافظة المختارة
+                                    final selectedGov = _governorates.firstWhere(
+                                      (gov) => gov['name'] == value,
+                                      orElse: () => {},
+                                    );
+                                    _selectedGovernorateId = selectedGov['id'] as int?;
+                                    // إعادة تعيين المحكمة المختارة
+                                    _selectedCourtId = null;
                                   });
+                                  // تحميل المحاكم الخاصة بالمحافظة المختارة
+                                  if (_selectedGovernorateId != null) {
+                                    _loadCourts(governorateId: _selectedGovernorateId);
+                                  } else {
+                                    // إذا لم يتم العثور على المحافظة، مسح قائمة المحاكم
+                                    setState(() {
+                                      _courts = [];
+                                    });
+                                  }
                                 },
                               ),
                       ),

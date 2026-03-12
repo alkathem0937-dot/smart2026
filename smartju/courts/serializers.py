@@ -3,10 +3,23 @@ from .models import Governorate, District, CourtType, CourtSpecialization, Court
 
 
 class GovernorateSerializer(serializers.ModelSerializer):
+    # إضافة المحاكم التابعة للمحافظة
+    courts = serializers.SerializerMethodField()
+    courts_count = serializers.SerializerMethodField()
+    
     class Meta:
         model = Governorate
-        fields = ('id', 'name', 'created_at', 'updated_at')
+        fields = ('id', 'name', 'courts', 'courts_count', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
+    
+    def get_courts(self, obj):
+        """إرجاع قائمة المحاكم التابعة لهذه المحافظة"""
+        courts = obj.courts.filter(is_active=True).order_by('name')
+        return [{'id': court.id, 'name': court.name} for court in courts]
+    
+    def get_courts_count(self, obj):
+        """إرجاع عدد المحاكم التابعة لهذه المحافظة"""
+        return obj.courts.filter(is_active=True).count()
 
 
 class DistrictSerializer(serializers.ModelSerializer):

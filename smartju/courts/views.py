@@ -8,7 +8,7 @@ from .serializers import (
 
 
 class GovernorateViewSet(viewsets.ModelViewSet):
-    queryset = Governorate.objects.all()
+    queryset = Governorate.objects.prefetch_related('courts').all()
     serializer_class = GovernorateSerializer
     permission_classes = [IsAuthenticated]
     filterset_fields = ['name']
