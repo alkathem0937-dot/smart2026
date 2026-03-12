@@ -127,14 +127,14 @@ schema_view = get_schema_view(
     permission_classes=[],  # Allow access to schema without authentication
 )
 
-# Health check view (for Render)
+# Health check view (for Render) - Ultra simple, no dependencies
 @require_http_methods(["GET", "HEAD"])
 def health_check(request):
-    """Health check endpoint for Render"""
+    """Health check endpoint for Render - must be fast and simple"""
     return JsonResponse({'status': 'ok'}, status=200)
 
-# Home page view
-@require_http_methods(["GET"])
+# Home page view - also serves as root health check
+@require_http_methods(["GET", "HEAD"])
 def home_view(request):
     """Home page that provides API information"""
     return JsonResponse({
@@ -189,9 +189,10 @@ def home_view(request):
 
 
 urlpatterns = [
-    # Health check (for Render)
+    # Health check endpoints (for Render) - must be first and simple
     path('health/', health_check, name='health'),
-    # Home page
+    path('health', health_check, name='health_no_slash'),  # Without trailing slash
+    # Root endpoint - simple for Render health checks, but also show home info
     path('', home_view, name='home'),
     
     # Admin
