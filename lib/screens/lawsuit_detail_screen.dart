@@ -143,32 +143,95 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   
   Future<void> _loadGovernorates() async {
     if (!mounted) return;
+    
+    // التحقق من تسجيل الدخول أولاً
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (!authProvider.isAuthenticated) {
+      if (kDebugMode) {
+        developer.log('User not authenticated. Cannot load governorates.', name: 'LawsuitDetailScreen');
+      }
+      setState(() {
+        _isLoadingGovernorates = false;
+        _governorates = [];
+      });
+      return;
+    }
+    
     setState(() {
       _isLoadingGovernorates = true;
     });
     
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final response = await authProvider.apiService.getGovernorates();
+      
+      if (kDebugMode) {
+        developer.log('🔍 [Governorates] Response type: ${response.runtimeType}', name: 'LawsuitDetailScreen');
+        developer.log('🔍 [Governorates] Response keys: ${response is Map ? (response as Map).keys.toList() : 'N/A'}', name: 'LawsuitDetailScreen');
+        developer.log('🔍 [Governorates] Full response: $response', name: 'LawsuitDetailScreen');
+      }
       
       if (mounted) {
         List<dynamic>? data;
         
         // معالجة الاستجابة - قد تأتي كـ List مباشرة أو كـ Map مع 'results'
         if (response is List) {
-          data = response;
-        } else if (response is Map<String, dynamic>) {
-          if (response['results'] != null) {
-            data = response['results'] as List?;
-          } else if (response['data'] != null) {
-            data = response['data'] as List?;
+          data = response as List<dynamic>;
+          if (kDebugMode) {
+            developer.log('✅ [Governorates] Response is List with ${data.length} items', name: 'LawsuitDetailScreen');
           }
-          // إذا كانت الاستجابة Map مباشرة بدون 'results' أو 'data'، تجاهلها
-          // لأن API يجب أن يعيد List أو Map مع 'results'
+        } else if (response is Map<String, dynamic>) {
+          // معالجة الاستجابة - Pagination class المخصص يعيد: {"success": true, "data": {"results": [...]}, ...}
+          // أو DRF standard: {"count": X, "next": null, "previous": null, "results": [...]}
+          
+          // الحالة 1: Pagination class المخصص (smartju.pagination.StandardResultsSetPagination)
+          // الاستجابة: {"success": true, "data": {"count": X, "results": [...]}, ...}
+          if (response.containsKey('data') && response['data'] is Map<String, dynamic>) {
+            final dataMap = response['data'] as Map<String, dynamic>;
+            if (dataMap.containsKey('results')) {
+              final results = dataMap['results'];
+              if (results is List) {
+                data = results as List<dynamic>;
+                if (kDebugMode) {
+                  developer.log('✅ [Governorates] Found data.results with ${data.length} items (Custom Pagination)', name: 'LawsuitDetailScreen');
+                }
+              }
+            }
+          }
+          // الحالة 2: DRF Standard Pagination
+          // الاستجابة: {"count": X, "next": null, "previous": null, "results": [...]}
+          else if (response.containsKey('results')) {
+            final results = response['results'];
+            if (results is List) {
+              data = results as List<dynamic>;
+              if (kDebugMode) {
+                developer.log('✅ [Governorates] Found results key with ${data.length} items (DRF Standard)', name: 'LawsuitDetailScreen');
+              }
+            }
+          }
+          // الحالة 3: data مباشرة كـ List (غير متوقع لكن ممكن)
+          else if (response.containsKey('data') && response['data'] is List) {
+            data = response['data'] as List<dynamic>;
+            if (kDebugMode) {
+              developer.log('✅ [Governorates] Found data as List with ${data.length} items', name: 'LawsuitDetailScreen');
+            }
+          }
+          // الحالة 4: لا توجد بيانات
+          else {
+            if (kDebugMode) {
+              developer.log('⚠️ [Governorates] Response is Map but no results/data found', name: 'LawsuitDetailScreen');
+              developer.log('⚠️ [Governorates] Map keys: ${response.keys.toList()}', name: 'LawsuitDetailScreen');
+              developer.log('⚠️ [Governorates] Full response: $response', name: 'LawsuitDetailScreen');
+            }
+          }
+        } else {
+          if (kDebugMode) {
+            developer.log('❌ [Governorates] Unexpected response type: ${response.runtimeType}', name: 'LawsuitDetailScreen');
+            developer.log('❌ [Governorates] Response value: $response', name: 'LawsuitDetailScreen');
+          }
         }
         
         if (kDebugMode) {
-          developer.log('Loaded ${data?.length ?? 0} governorates', name: 'LawsuitDetailScreen');
+          developer.log('📊 [Governorates] Final data count: ${data?.length ?? 0}', name: 'LawsuitDetailScreen');
         }
         
         final mappedGovernorates = (data ?? []).map((e) {
@@ -204,6 +267,11 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       if (mounted) {
         setState(() {
           _isLoadingGovernorates = false;
+          // في حالة الخطأ، تأكد من أن القائمة فارغة
+          if (_governorates.isEmpty) {
+            // قد يكون المستخدم غير مسجل دخول أو هناك خطأ في الاتصال
+            developer.log('No governorates loaded. Error: $e', name: 'LawsuitDetailScreen');
+          }
         });
       }
     }
@@ -1087,25 +1155,52 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                 final isWide = constraints.maxWidth > 600;
                 if (isWide) {
                   return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start, // محاذاة من الأعلى
                     children: [
                       Expanded(
+                        flex: 1, // مساحة متساوية
                         child: _isLoadingGovernorates
                             ? const Center(child: CircularProgressIndicator())
                             : _governorates.isEmpty
                                 ? const Text('لا توجد محافظات متاحة', style: TextStyle(color: Colors.grey))
                                 : DropdownButtonFormField<String>(
                                 value: _selectedGovernorate,
-                                decoration: const InputDecoration(
+                                isExpanded: true, // مهم: يضمن استخدام المساحة الكاملة
+                                decoration: InputDecoration(
                                   labelText: 'المحافظة',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.location_city),
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.location_city, size: 20), // تقليل حجم الأيقونة
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12), // تقليل padding
+                                  isDense: true,
+                                  constraints: const BoxConstraints(), // إزالة constraints الافتراضية
                                 ),
+                                menuMaxHeight: 300, // حد أقصى لارتفاع القائمة - مهم للويب
                                 items: _governorates.map((gov) {
                                   return DropdownMenuItem(
                                     value: gov['name'] as String,
-                                    child: Text(gov['name'] as String),
+                                    child: Text(
+                                      gov['name'] as String,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
                                   );
                                 }).toList(),
+                                selectedItemBuilder: (context) {
+                                  // عرض النص المختار مع ellipsis - مهم لمنع overflow
+                                  return _governorates.map((gov) {
+                                    return SizedBox(
+                                      width: double.infinity, // استخدام العرض الكامل
+                                      child: Text(
+                                        gov['name'] as String,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: const TextStyle(fontSize: 13), // تقليل حجم الخط قليلاً
+                                        softWrap: false,
+                                      ),
+                                    );
+                                  }).toList();
+                                },
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedGovernorate = value;
@@ -1130,8 +1225,9 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                                 },
                               ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12), // تقليل المسافة
                       Expanded(
+                        flex: 1, // مساحة متساوية
                         child: _isLoadingCourts
                             ? const Center(child: CircularProgressIndicator())
                             : _courts.isEmpty && _selectedGovernorateId == null
@@ -1140,17 +1236,42 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                                     ? const Text('لا توجد محاكم متاحة', style: TextStyle(color: Colors.grey))
                                     : DropdownButtonFormField<int>(
                                 value: _selectedCourtId,
-                                decoration: const InputDecoration(
+                                isExpanded: true, // مهم: يضمن استخدام المساحة الكاملة
+                                decoration: InputDecoration(
                                   labelText: 'المحكمة *',
-                                  border: OutlineInputBorder(),
-                                  prefixIcon: Icon(Icons.gavel),
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.gavel, size: 20), // تقليل حجم الأيقونة
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12), // تقليل padding
+                                  isDense: true, // يقلل من المساحة المستخدمة
+                                  constraints: const BoxConstraints(), // إزالة constraints الافتراضية
                                 ),
+                                menuMaxHeight: 300, // حد أقصى لارتفاع القائمة
                                 items: _courts.map((court) {
                                   return DropdownMenuItem(
                                     value: court['id'] as int,
-                                    child: Text(court['name'] as String),
+                                    child: Text(
+                                      court['name'] as String,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2, // سطرين للسماح بعرض أسماء طويلة
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
                                   );
                                 }).toList(),
+                                selectedItemBuilder: (context) {
+                                  // عرض النص المختار مع ellipsis - مهم لمنع overflow
+                                  return _courts.map((court) {
+                                    return SizedBox(
+                                      width: double.infinity, // استخدام العرض الكامل
+                                      child: Text(
+                                        court['name'] as String,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: const TextStyle(fontSize: 13), // تقليل حجم الخط قليلاً
+                                        softWrap: false,
+                                      ),
+                                    );
+                                  }).toList();
+                                },
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedCourtId = value;
@@ -1174,30 +1295,57 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                           : _governorates.isEmpty
                               ? Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Icon(Icons.error_outline, color: Colors.grey, size: 24),
+                                    const Icon(Icons.info_outline, color: Colors.orange, size: 24),
                                     const SizedBox(height: 8),
                                     const Text('لا توجد محافظات متاحة', style: TextStyle(color: Colors.grey)),
                                     const SizedBox(height: 4),
-                                    TextButton(
+                                    TextButton.icon(
                                       onPressed: () => _loadGovernorates(),
-                                      child: const Text('إعادة المحاولة'),
+                                      icon: const Icon(Icons.refresh, size: 16),
+                                      label: const Text('إعادة المحاولة'),
                                     ),
                                   ],
                                 )
                               : DropdownButtonFormField<String>(
                               value: _selectedGovernorate,
-                              decoration: const InputDecoration(
+                              isExpanded: true, // مهم: يضمن استخدام المساحة الكاملة
+                              decoration: InputDecoration(
                                 labelText: 'المحافظة',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.location_city),
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.location_city, size: 20),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                isDense: true,
+                                constraints: const BoxConstraints(),
                               ),
+                              menuMaxHeight: 300, // حد أقصى لارتفاع القائمة - مهم للويب
                               items: _governorates.map((gov) {
                                 return DropdownMenuItem(
                                   value: gov['name'] as String,
-                                  child: Text(gov['name'] as String),
+                                  child: Text(
+                                    gov['name'] as String,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
                                 );
                               }).toList(),
+                              selectedItemBuilder: (context) {
+                                // عرض النص المختار مع ellipsis - مهم لمنع overflow
+                                return _governorates.map((gov) {
+                                  return SizedBox(
+                                    width: double.infinity,
+                                    child: Text(
+                                      gov['name'] as String,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: const TextStyle(fontSize: 13),
+                                      softWrap: false,
+                                    ),
+                                  );
+                                }).toList();
+                              },
                               onChanged: (value) {
                                 setState(() {
                                   _selectedGovernorate = value;
@@ -1230,17 +1378,41 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                                   ? const Text('لا توجد محاكم متاحة', style: TextStyle(color: Colors.grey))
                                   : DropdownButtonFormField<int>(
                               value: _selectedCourtId,
-                              decoration: const InputDecoration(
+                              isExpanded: true,
+                              decoration: InputDecoration(
                                 labelText: 'المحكمة *',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.gavel),
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.gavel, size: 20),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                isDense: true,
+                                constraints: const BoxConstraints(),
                               ),
+                              menuMaxHeight: 300,
                               items: _courts.map((court) {
                                 return DropdownMenuItem(
                                   value: court['id'] as int,
-                                  child: Text(court['name'] as String),
+                                  child: Text(
+                                    court['name'] as String,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 2,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
                                 );
                               }).toList(),
+                              selectedItemBuilder: (context) {
+                                return _courts.map((court) {
+                                  return SizedBox(
+                                    width: double.infinity,
+                                    child: Text(
+                                      court['name'] as String,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: const TextStyle(fontSize: 13),
+                                      softWrap: false,
+                                    ),
+                                  );
+                                }).toList();
+                              },
                               onChanged: (value) {
                                 setState(() {
                                   _selectedCourtId = value;
