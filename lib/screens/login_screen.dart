@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_theme.dart';
 
-/// Login Screen - المحسنة مع ميزة الحفظ التلقائي والدخول كضيف
+/// Login Screen - شاشة الدخول بتصميم 2025+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -17,6 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _rememberMe = true;
+  bool _discovering = false;
 
   @override
   void initState() {
@@ -24,7 +30,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _loadSavedUsername();
   }
 
-  // تحميل اسم المستخدم المحفوظ تلقائياً
   Future<void> _loadSavedUsername() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUsername = prefs.getString('saved_username');
@@ -42,56 +47,84 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _rediscoverServer() async {
+    setState(() => _discovering = true);
+    try {
+      final u = await ApiConfig.rediscoverLanServer();
+      if (!mounted) return;
+      setState(() {});
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            u != null
+                ? 'تم ضبط الخادم تلقائياً: $u'
+                : 'لم يُعثر على خادم على الشبكة. تأكد من تشغيل Django على المنفذ 8000.',
+          ),
+          backgroundColor: u != null ? AppColors.success : AppColors.warning,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _discovering = false);
+    }
+  }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     ScaffoldMessenger.of(context).clearSnackBars();
-    
+
     final success = await authProvider.login(
       _usernameController.text.trim(),
       _passwordController.text,
     );
 
     if (success && mounted) {
-      // حفظ اسم المستخدم إذا كان خيار "تذكرني" مفعلاً
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       if (_rememberMe) {
         await prefs.setString('saved_username', _usernameController.text.trim());
       } else {
         await prefs.remove('saved_username');
       }
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تسجيل الدخول بنجاح'), backgroundColor: Colors.green),
+        SnackBar(
+          content: const Text('تم تسجيل الدخول بنجاح'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
-      
-      // Navigate to Home Screen
-      Navigator.pushReplacementNamed(context, '/home');
+
+      // Navigate to / so AuthWrapper can decide which dashboard to show
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/');
+      }
     } else if (mounted) {
-      // تحديد نوع الخطأ وعرض رسالة مناسبة
       final errorMessage = authProvider.errorMessage ?? 'فشل تسجيل الدخول';
-      final isNetworkError = errorMessage.contains('لا يوجد اتصال') || 
-                            errorMessage.contains('انتهت مهلة') ||
-                            errorMessage.contains('لا يمكن الاتصال');
-      final isAuthError = errorMessage.contains('اسم المستخدم') || 
-                         errorMessage.contains('كلمة المرور') ||
-                         errorMessage.contains('غير صحيحة');
-      
+      final isNetworkError = errorMessage.contains('لا يوجد اتصال') ||
+          errorMessage.contains('انتهت مهلة') ||
+          errorMessage.contains('لا يمكن الاتصال');
+      final isAuthError = errorMessage.contains('اسم المستخدم') ||
+          errorMessage.contains('كلمة المرور') ||
+          errorMessage.contains('غير صحيحة');
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
               Icon(
-                isNetworkError 
-                    ? Icons.wifi_off 
-                    : isAuthError 
-                        ? Icons.error_outline 
+                isNetworkError
+                    ? Icons.wifi_off_rounded
+                    : isAuthError
+                        ? Icons.error_outline_rounded
                         : Icons.warning_amber_rounded,
                 color: Colors.white,
                 size: 24,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Text(
                   errorMessage,
@@ -100,190 +133,214 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ],
           ),
-          backgroundColor: isNetworkError 
-              ? Colors.orange.shade700 
-              : isAuthError 
-                  ? Colors.red.shade700 
-                  : Colors.red,
-          duration: const Duration(seconds: 4),
+          backgroundColor: isNetworkError
+              ? AppColors.warning
+              : isAuthError
+                  ? AppColors.error
+                  : AppColors.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          action: SnackBarAction(
-            label: 'حسناً',
-            textColor: Colors.white,
-            onPressed: () {},
-          ),
         ),
       );
     }
   }
 
-  void _handleGuestLogin() {
-    // توجيه المستخدم للشاشة الرئيسية كضيف (بدون تسجيل دخول حقيقي)
-    // يمكن إضافة منطق خاص بالضيف في الـ AuthProvider لاحقاً إذا لزم الأمر
-    Navigator.pushReplacementNamed(context, '/home');
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('أهلاً بك! أنت تتصفح التطبيق كضيف الآن.'), backgroundColor: Colors.blue),
-    );
+  void _handleGuestLogin() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    authProvider.setGuestMode(true);
+    
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, '/');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('أهلاً بك! أنت تتصفح " منصة القضاء الذكية" كضيف (لمدة دقيقتين فقط).'),
+          backgroundColor: AppColors.info,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = context.theme;
+    final isDark = context.isDark;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primaryContainer.withOpacity(0.3),
-              Colors.white,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // الشعار
-                    Hero(
-                      tag: 'app_logo',
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: colorScheme.primary.withOpacity(0.2),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
+      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      body: Stack(
+        children: [
+          // Background Elements
+          Positioned(
+            top: -100,
+            right: -100,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.brand.withOpacity(isDark ? 0.1 : 0.05),
+              ),
+            ),
+          ).animate().fadeIn(duration: 1.seconds).scale(begin: const Offset(0.8, 0.8)),
+          
+          Positioned(
+            bottom: -50,
+            left: -50,
+            child: Container(
+              width: 250,
+              height: 250,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.gold.withOpacity(isDark ? 0.1 : 0.05),
+              ),
+            ),
+          ).animate().fadeIn(duration: 1.seconds, delay: 300.ms).scale(begin: const Offset(0.8, 0.8)),
+
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo & Branding
+                      Hero(
+                        tag: 'app_logo',
+                        child: Container(
+                          padding: const EdgeInsets.all(AppSpacing.lg),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.darkSurface : Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: isDark ? AppShadows.darkMd : AppShadows.lg,
+                            border: Border.all(
+                              color: AppColors.brand.withOpacity(0.2),
+                              width: 2,
                             ),
-                          ],
-                        ),
-                        child: Icon(Icons.gavel_rounded, size: 70, color: colorScheme.primary),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-
-                    const Text(
-                      'SmartJudi',
-                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Color(0xFF1E3A8A)),
-                    ),
-                    const Text('منصة الخدمات القضائية الذكية', style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
-                    const SizedBox(height: 50),
-
-                    // حقل اسم المستخدم
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(
-                        labelText: 'اسم المستخدم',
-                        prefixIcon: const Icon(Icons.person_outline),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      validator: (v) => v!.isEmpty ? 'يرجى إدخال اسم المستخدم' : null,
-                    ),
-                    const SizedBox(height: 20),
-
-                    // حقل كلمة المرور
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      decoration: InputDecoration(
-                        labelText: 'كلمة المرور',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                        ),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      validator: (v) => v!.isEmpty ? 'يرجى إدخال كلمة المرور' : null,
-                    ),
-
-                    // خيار تذكرني
-                    Row(
-                      children: [
-                        Checkbox(
-                          value: _rememberMe,
-                          onChanged: (v) => setState(() => _rememberMe = v!),
-                          activeColor: colorScheme.primary,
-                        ),
-                        const Text('تذكر اسم المستخدم', style: TextStyle(fontFamily: 'Cairo', fontSize: 13)),
-                        const Spacer(),
-                        TextButton(
-                          onPressed: () {}, // إضافة استعادة كلمة المرور لاحقاً
-                          child: const Text('نسيت كلمة المرور؟', style: TextStyle(fontFamily: 'Cairo', fontSize: 13)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    // زر تسجيل الدخول
-                    Consumer<AuthProvider>(
-                      builder: (context, auth, _) => SizedBox(
-                        width: double.infinity,
-                        height: 55,
-                        child: ElevatedButton(
-                          onPressed: auth.isLoading ? null : _handleLogin,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E3A8A),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                            elevation: 5,
                           ),
+                          child: Image.asset(
+                            'assets/images/logo.png',
+                            height: 60,
+                            width: 60,
+                          ),
+                        ),
+                      ).animate().scale(delay: 200.ms, duration: 500.ms, curve: Curves.easeOutBack),
+                      
+                      const SizedBox(height: AppSpacing.xl),
+
+                      Text(
+                        'منصة القضاء الذكية',
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? AppColors.brandLight : AppColors.brand,
+                        ),
+                      ).animate().fade(delay: 400.ms).slideY(begin: 0.2),
+                      
+                      const SizedBox(height: AppSpacing.xs),
+                      
+                      Text(
+                        'منصة الخدمات القضائية الذكية',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                        ),
+                      ).animate().fade(delay: 500.ms).slideY(begin: 0.2),
+                      
+                      const SizedBox(height: AppSpacing.xxxl),
+
+                      // Username
+                      TextFormField(
+                        controller: _usernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'اسم المستخدم',
+                          prefixIcon: Icon(Icons.person_rounded),
+                        ),
+                        validator: (v) => v!.isEmpty ? 'يرجى إدخال اسم المستخدم' : null,
+                      ).animate().fade(delay: 600.ms).slideX(begin: 0.1),
+                      
+                      const SizedBox(height: AppSpacing.lg),
+
+                      // Password
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: 'كلمة المرور',
+                          prefixIcon: const Icon(Icons.lock_rounded),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword ? Icons.visibility_rounded : Icons.visibility_off_rounded),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                        ),
+                        validator: (v) => v!.isEmpty ? 'يرجى إدخال كلمة المرور' : null,
+                      ).animate().fade(delay: 700.ms).slideX(begin: 0.1),
+                      
+                      const SizedBox(height: AppSpacing.md),
+                      
+                      // تم إزالة بطاقة خادم الشبكة المحلية بناءً على طلب المستخدم (تلقائي)
+
+                      const SizedBox(height: AppSpacing.sm),
+
+                      // Options Row
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _rememberMe,
+                            onChanged: (v) => setState(() => _rememberMe = v!),
+                          ),
+                          Text('تذكرني', style: theme.textTheme.bodyMedium),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () {},
+                            child: const Text('نسيت المرور؟'),
+                          ),
+                        ],
+                      ).animate().fade(delay: 900.ms),
+                      
+                      const SizedBox(height: AppSpacing.xl),
+
+                      // Login Button
+                      Consumer<AuthProvider>(
+                        builder: (context, auth, _) => ElevatedButton(
+                          onPressed: auth.isLoading ? null : _handleLogin,
                           child: auth.isLoading
-                            ? const CircularProgressIndicator(color: Colors.white)
-                            : const Text('تسجيل الدخول', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('تسجيل الدخول'),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 15),
+                      ).animate().fade(delay: 1000.ms).slideY(begin: 0.2),
+                      
+                      const SizedBox(height: AppSpacing.md),
 
-                    // زر الدخول كضيف
-                    SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: OutlinedButton(
+                      // Guest Button
+                      OutlinedButton(
                         onPressed: _handleGuestLogin,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF1E3A8A)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                        ),
-                        child: const Text('تصفح كضيف', style: TextStyle(fontSize: 16, fontFamily: 'Cairo', color: Color(0xFF1E3A8A))),
-                      ),
-                    ),
+                        child: const Text('تصفح كضيف'),
+                      ).animate().fade(delay: 1100.ms).slideY(begin: 0.2),
 
-                    const SizedBox(height: 30),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('ليس لديك حساب؟', style: TextStyle(fontFamily: 'Cairo')),
-                        TextButton(
-                          onPressed: () => Navigator.pushNamed(context, '/register'),
-                          child: const Text('إنشاء حساب جديد', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-                        ),
-                      ],
-                    ),
-                  ],
+                      const SizedBox(height: AppSpacing.xl),
+                      
+                      // Register Link
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('ليس لديك حساب؟', style: theme.textTheme.bodyMedium),
+                          TextButton(
+                            onPressed: () => Navigator.pushNamed(context, '/register'),
+                            child: const Text('إنشاء حساب جديد'),
+                          ),
+                        ],
+                      ).animate().fade(delay: 1200.ms),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

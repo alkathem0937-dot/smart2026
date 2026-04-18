@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 import '../services/api_service.dart';
 import '../models/user_model.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
@@ -12,14 +13,41 @@ class AuthProvider with ChangeNotifier {
   
   AuthProvider({ApiService? apiService}) 
       : _apiService = apiService ?? ApiService();
+      
   UserModel? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _isGuest = false;
+  Future<void>? _guestTimer;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get isAuthenticated => _currentUser != null;
+  bool get isAuthenticated => _currentUser != null || _isGuest;
+  bool get isGuest => _isGuest;
+
+  void setGuestMode(bool value) {
+    _isGuest = value;
+    if (_isGuest) {
+      // إعداد مستخدم ضيف افتراضي
+      _currentUser = UserModel(
+        id: 0,
+        username: 'guest',
+        email: 'guest@smartjudi.com',
+        firstName: 'ضيف',
+        lastName: 'النظام',
+        role: 'guest',
+      );
+      
+      // بدء مؤقت لمدة دقيقتين
+      _guestTimer = Future.delayed(const Duration(minutes: 2), () {
+        if (_isGuest) {
+          logout();
+        }
+      });
+    }
+    notifyListeners();
+  }
   
   // Get access token for other services
   String? get accessToken => _apiService.accessToken;
@@ -59,9 +87,15 @@ class AuthProvider with ChangeNotifier {
         // Get user profile
         try {
           _currentUser = await _apiService.getCurrentUser();
+          // Cache successful profile
+          await _cacheUserProfile(_currentUser!);
         } catch (e) {
-          // Failed to get user, clear tokens
-          await _clearStoredTokens();
+          print('⚠️ [Auth] Could not fetch profile from server, trying cache: $e');
+          _currentUser = await _loadCachedProfile();
+          if (_currentUser == null) {
+            // Failed to get user from both, clear tokens
+            await _clearStoredTokens();
+          }
         }
       }
     } catch (e) {
@@ -69,6 +103,24 @@ class AuthProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  // Caching helpers
+  Future<void> _cacheUserProfile(UserModel user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user_profile', user.toJsonString());
+    print('💾 [Auth] User profile cached for offline use');
+  }
+
+  Future<UserModel?> _loadCachedProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString('cached_user_profile');
+    if (json == null) return null;
+    try {
+      return UserModel.fromJsonString(json);
+    } catch (e) {
+      return null;
     }
   }
 
@@ -106,6 +158,7 @@ class AuthProvider with ChangeNotifier {
         print('🔐 [Auth] Attempting to get user profile...');
         developer.log('Attempting to get user profile...', name: 'AuthProvider');
         _currentUser = await _apiService.getCurrentUser();
+        await _cacheUserProfile(_currentUser!);
         print('✅ [Auth] User profile loaded: ${_currentUser?.username}, role: ${_currentUser?.role}');
         developer.log('User profile loaded: ${_currentUser?.username}', name: 'AuthProvider');
         
@@ -167,12 +220,29 @@ class AuthProvider with ChangeNotifier {
       else if (errorMsg.contains('TimeoutException') || 
                errorMsg.contains('timeout') ||
                errorMsg.contains('Connection timed out')) {
-        _errorMessage = 'انتهت مهلة الاتصال\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+        if (ApiConfig.baseUrl.contains('127.0.0.1')) {
+          _errorMessage =
+              'انتهت مهلة الاتصال: لم يُعثر على الخادم على الشبكة.\n'
+              'شغّل Django على جهاز الكمبيوتر ثم اضغط زر التحديث بجانب عنوان الخادم في شاشة الدخول.';
+        } else {
+          _errorMessage =
+              'انتهت مهلة الاتصال بالخادم ${ApiConfig.baseUrl}\n'
+              'تأكد من تشغيل الخادم ومن جدار الحماية (المنفذ 8000).';
+        }
       }
       // أخطاء رفض الاتصال
       else if (errorMsg.contains('Connection refused') ||
                errorMsg.contains('Unable to connect')) {
-        _errorMessage = 'لا يمكن الاتصال بالخادم\nيرجى التحقق من اتصال الإنترنت والمحاولة لاحقاً';
+        if (ApiConfig.baseUrl.contains('127.0.0.1')) {
+          _errorMessage =
+              'لم يُعثر على خادم Django على شبكة Wi‑Fi.\n'
+              'شغّل الخادم: python manage.py runserver 0.0.0.0:8000\n'
+              'ثم اضغط زر التحديث بجانب «الخادم على شبكة Wi‑Fi» أعلاه.';
+        } else {
+          _errorMessage =
+              'لا يمكن الاتصال بالخادم على:\n${ApiConfig.baseUrl}\n'
+              'تأكد من تشغيل Django (runserver 0.0.0.0:8000) ومن الشبكة.';
+        }
       }
       // أخطاء المصادقة (اسم المستخدم/كلمة المرور)
       else if (errorMsg.contains('401') || 
@@ -220,6 +290,8 @@ class AuthProvider with ChangeNotifier {
     _apiService.clearTokens();
     _currentUser = null;
     _errorMessage = null;
+    _isGuest = false;
+    _guestTimer = null;
     notifyListeners();
   }
 

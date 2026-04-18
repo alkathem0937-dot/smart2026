@@ -37,6 +37,12 @@ dependencies:
   
   # HTTP requests
   http: ^1.1.0
+
+  # Wi‑Fi IPv4 لاكتشاف الخادم على LAN
+  network_info_plus: ^6.1.4
+
+  # تمييز الهاتف الحقيقي عن محاكي Android (10.0.2.2 للمحاكي فقط)
+  device_info_plus: ^11.3.0
   
   # State management
   provider: ^6.1.1
@@ -70,6 +76,11 @@ dependencies:
   
   # WebView for in-app browsing
   webview_flutter: ^4.4.2
+  webview_flutter_android: ^3.12.0
+  webview_flutter_wkwebview: ^3.9.0
+
+  # Share
+  share_plus: ^10.1.4
   
   # File picker for attachments
   file_picker: ^8.1.2
@@ -81,6 +92,33 @@ dependencies:
   # HTML Rendering
   flutter_html: ^3.0.0-beta.2
 
+  # Google Fonts (Cairo, Poppins)
+  google_fonts: ^6.1.0
+
+  # Smooth animations
+  flutter_animate: ^4.5.0
+
+  # Shimmer loading effect
+  shimmer: ^3.0.0
+
+  # Cached network images
+  cached_network_image: ^3.3.1
+
+  # Voice and Audio Features
+  speech_to_text: ^7.3.0
+  flutter_tts: ^4.2.5
+  permission_handler: ^12.0.1
+  audioplayers: ^6.6.0
+  record: ^6.2.0
+
+  # PDF generation
+  pdf: ^3.10.8
+  printing: ^5.12.0
+
+  # Local Database
+  sqflite: ^2.3.0
+  path: ^1.9.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -91,6 +129,14 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/logo.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -103,10 +149,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/images/logo.png
+    - legal.db
+    - legal_search.db
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

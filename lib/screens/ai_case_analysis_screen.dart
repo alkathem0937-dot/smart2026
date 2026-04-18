@@ -1,11 +1,9 @@
-// lib/screens/ai_case_analysis_screen.dart
-// شاشة تحليل القضايا باستخدام الذكاء الاصطناعي
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/chat_provider.dart';
+import '../services/api_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 
-/// AI-Powered Case Analysis Screen - تحليل وإعداد القضايا بالذكاء الاصطناعي
 class AICaseAnalysisScreen extends StatefulWidget {
   const AICaseAnalysisScreen({super.key});
 
@@ -14,298 +12,205 @@ class AICaseAnalysisScreen extends StatefulWidget {
 }
 
 class _AICaseAnalysisScreenState extends State<AICaseAnalysisScreen> {
-  final TextEditingController _caseDescriptionController =
-      TextEditingController();
-  String _analysisResult = '';
-  bool _isAnalyzing = false;
-  String? _errorMessage;
+  final _factsController = TextEditingController();
+  final _claimsController = TextEditingController();
+  final _subjectController = TextEditingController();
+  final _positionController = TextEditingController();
+  
+  bool _isLoading = false;
+  String? _analysisResult;
 
-  @override
-  void dispose() {
-    _caseDescriptionController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _analyzeCase() async {
-    if (_caseDescriptionController.text.trim().isEmpty) {
-      setState(() {
-        _errorMessage = 'الرجاء إدخال تفاصيل القضية للتحليل.';
-      });
+  Future<void> _startAnalysis() async {
+    if (_factsController.text.isEmpty || _claimsController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى إدخال وقائع القضية وادعاءات الخصم')),
+      );
       return;
     }
 
     setState(() {
-      _isAnalyzing = true;
-      _errorMessage = null;
-      _analysisResult = '';
+      _isLoading = true;
+      _analysisResult = null;
     });
 
-    final query =
-        "حلل القضية التالية وقدم التكييف القانوني والإجراءات المحتملة بناءً على القانون اليمني:\n"
-        "${_caseDescriptionController.text}";
-
     try {
-      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-      await chatProvider.sendMessage(query);
-      
-      // Extract response from messages
-      if (chatProvider.messages.isNotEmpty) {
-        final lastMessage = chatProvider.messages.last;
-        if (lastMessage['role'] == 'assistant') {
-          final content = lastMessage['content'];
-          setState(() {
-            _analysisResult = content?.toString() ?? 'لم يتم الحصول على نتائج.';
-          });
-        } else {
-          setState(() {
-            _analysisResult = 'لم يتم الحصول على نتائج.';
-          });
-        }
+      final apiService = Provider.of<ApiService>(context, listen: false);
+      final response = await apiService.post('/api/ai/analyze-case/', {
+        'subject': _subjectController.text,
+        'facts': _factsController.text,
+        'opponent_claims': _claimsController.text,
+        'client_position': _positionController.text,
+      });
+
+      if (response['analysis'] != null) {
+        setState(() {
+          _analysisResult = response['analysis'];
+        });
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'فشل في تحليل القضية: $e';
-        _analysisResult =
-            'عذرًا، حدث خطأ أثناء تحليل القضية. يرجى المحاولة مرة أخرى.';
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في التحليل: $e')),
+      );
     } finally {
       setState(() {
-        _isAnalyzing = false;
+        _isLoading = false;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.isDark;
+
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('تحليل القضايا بالذكاء الاصطناعي'),
-        backgroundColor: const Color(0xFF1A1A1A),
-        foregroundColor: Colors.white,
+        title: const Text('المحلل الاستراتيجي الذكي', style: TextStyle(fontWeight: FontWeight.bold)),
+        actions: [
+          if (_analysisResult != null)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () => setState(() => _analysisResult = null),
+            ),
+        ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // بطاقة إدخال تفاصيل القضية
-          Card(
-            elevation: 2,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFD4AF37).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.analytics_outlined,
-                          color: Color(0xFFD4AF37),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'تحليل القضية',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _caseDescriptionController,
-                    maxLines: 8,
-                    minLines: 5,
-                    decoration: InputDecoration(
-                      labelText: 'تفاصيل القضية',
-                      hintText:
-                          'أدخل وصفاً تفصيلياً للقضية المراد تحليلها...\n'
-                          'مثال: شخص قام بالاستيلاء على أرض مملوكة للدولة...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFD4AF37)),
-                      ),
-                      alignLabelWithHint: true,
-                    ),
-                    textDirection: TextDirection.rtl,
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isAnalyzing ? null : _analyzeCase,
-                      icon: _isAnalyzing
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(
-                        _isAnalyzing ? 'جاري التحليل...' : 'تحليل القضية',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        textStyle: const TextStyle(fontSize: 16),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      body: _analysisResult == null ? _buildInputForm() : _buildResultView(),
+      bottomNavigationBar: _analysisResult == null ? Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            minimumSize: const Size(double.infinity, 56),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
-          // رسالة الخطأ
-          if (_errorMessage != null)
-            Container(
-              margin: const EdgeInsets.only(top: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.red, fontSize: 14),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          onPressed: _isLoading ? null : _startAnalysis,
+          child: _isLoading 
+            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            : const Text('ابدأ التحليل الاستراتيجي الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+      ) : null,
+    );
+  }
+
+  Widget _buildInputForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInfoBanner(),
+          const SizedBox(height: 24),
+          _buildTextField('موضوع القضية (اختياري)', _subjectController, 'مثلاً: نزاع عقاري على أرض زراعية', 1),
           const SizedBox(height: 16),
-          // نتائج التحليل
-          if (_analysisResult.isNotEmpty) ...[
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.description_outlined,
-                            color: Colors.green,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'نتائج التحليل',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 24),
-                    SelectableText(
-                      _analysisResult,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        height: 1.8,
-                        color: Colors.black87,
-                      ),
-                      textDirection: TextDirection.rtl,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ] else if (!_isAnalyzing) ...[
-            // بطاقات الميزات
-            _buildFeatureCard(
-              context,
-              icon: Icons.description,
-              title: 'إعداد الدعاوى',
-              description:
-                  'إعداد الدعاوى تلقائياً حسب البيانات المقدمة وأطراف التقاضي',
-              color: Colors.blue,
-            ),
-            _buildFeatureCard(
-              context,
-              icon: Icons.reply,
-              title: 'معالجة الردود',
-              description:
-                  'إعداد الردود على الدعاوى والطعون والخدمات المطلوبة',
-              color: Colors.green,
-            ),
-            _buildFeatureCard(
-              context,
-              icon: Icons.gavel,
-              title: 'التحليل القانوني',
-              description:
-                  'تحليل القضايا بناءً على القوانين والتشريعات اليمنية',
-              color: Colors.orange,
-            ),
-          ],
+          _buildTextField('وقائع القضية (Facts)', _factsController, 'اشرح تفاصيل ما حدث بالتفصيل...', 5),
+          const SizedBox(height: 16),
+          _buildTextField('ادعاءات الخصم (Opponent Claims)', _claimsController, 'ماذا يدعي الطرف الآخر؟ ما هي حججه؟', 5),
+          const SizedBox(height: 16),
+          _buildTextField('موقف الموكل وردودنا الأولية', _positionController, 'ما هي الأدلة التي نملكها؟ وجهة نظرنا؟', 4),
+          const SizedBox(height: 100),
         ],
       ),
     );
   }
 
-  Widget _buildFeatureCard(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String description,
-    required Color color,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
+  Widget _buildInfoBanner() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.amber.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: Colors.amber),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'كلما كانت الوقائع والادعاءات مفصلة، زادت دقة التحليل الاستراتيجي واقتراحات الرد القانوني.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
           ),
-          child: Icon(icon, color: color),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField(String label, TextEditingController controller, String hint, int lines) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          maxLines: lines,
+          style: const TextStyle(fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+            filled: true,
+            fillColor: context.isDark ? const Color(0xFF1E293B) : Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: context.isDark ? Colors.white10 : Colors.black.withOpacity(0.1)),
+            ),
+          ),
         ),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(description),
-        ),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () {
-          // يمكن فتح شاشة الدردشة مع سؤال مسبق
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$title - استخدم صندوق التحليل أعلاه')),
-          );
-        },
+      ],
+    );
+  }
+
+  Widget _buildResultView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Text('نتائج التحليل الاستراتيجي', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: context.isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+            ),
+            child: SelectableText(
+              _analysisResult!,
+              style: const TextStyle(height: 1.6, fontSize: 14),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('نسخ التحليل'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[700]),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.picture_as_pdf, size: 18),
+                  label: const Text('تصدير للملف'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 40),
+        ],
       ),
     );
   }

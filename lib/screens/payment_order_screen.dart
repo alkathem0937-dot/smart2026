@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
+import '../providers/lawsuit_provider.dart';
 import '../models/payment_order_model.dart';
+import '../models/lawsuit_model.dart';
 import 'dart:developer' as developer;
 
 /// Payment Order Screen - أمر الأداء
@@ -110,26 +112,49 @@ class _PaymentOrderScreenState extends State<PaymentOrderScreen> {
   Future<void> _savePaymentOrder() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedLawsuitId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى اختيار الدعوى')),
-      );
-      return;
-    }
-
     setState(() => _isSaving = true);
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      // If no lawsuit is selected, create a dummy one first
+      if (_selectedLawsuitId == null) {
+        final lawsuitProvider = Provider.of<LawsuitProvider>(context, listen: false);
+        String sub = 'أمر أداء - ${DateFormat('yyyy-MM-dd').format(DateTime.now())}';
+        if (_descriptionController.text.isNotEmpty) {
+           sub = _descriptionController.text.length > 50 
+              ? _descriptionController.text.substring(0, 50) 
+              : _descriptionController.text;
+        }
+        
+        final newLawsuit = LawsuitModel(
+          caseNumber: 'L-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
+          caseType: 'امر_اداء',
+          caseStatus: 'جديد',
+          subject: sub,
+          filingDate: DateTime.now(),
+        );
+        
+        final created = await lawsuitProvider.createLawsuit(newLawsuit);
+        if (created != null && created.id != null) {
+          _selectedLawsuitId = created.id;
+        } else {
+           throw Exception('فشل إنشاء ملف الدعوى التلقائي');
+        }
+      }
+      
       final amount = double.tryParse(_amountController.text.trim()) ?? 0;
+      
+      String orderNumber = _orderNumberController.text.trim();
+      if (orderNumber.isEmpty) {
+        orderNumber = 'P-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+      }
       
       final paymentOrder = PaymentOrderModel(
         id: widget.paymentOrderId,
         lawsuitId: _selectedLawsuitId!,
         amount: amount,
-        orderNumber: _orderNumberController.text.trim().isEmpty 
-            ? null 
-            : _orderNumberController.text.trim(),
+        orderNumber: orderNumber,
         orderDate: _selectedOrderDate ?? DateTime.now(),
         description: _descriptionController.text.trim().isEmpty 
             ? null 
@@ -244,47 +269,6 @@ class _PaymentOrderScreenState extends State<PaymentOrderScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Lawsuit Selection
-            Card(
-              color: Colors.blue.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'معلومات الدعوى',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: TextEditingController(text: _selectedLawsuitNumber ?? ''),
-                      decoration: const InputDecoration(
-                        labelText: 'رقم الدعوى',
-                        prefixIcon: Icon(Icons.gavel),
-                        border: OutlineInputBorder(),
-                      ),
-                      readOnly: true,
-                      onTap: () {
-                        // TODO: Open lawsuit selection dialog
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Order Number
-            TextFormField(
-              controller: _orderNumberController,
-              textAlign: TextAlign.right,
-              decoration: const InputDecoration(
-                labelText: 'رقم الأمر (اختياري)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.numbers),
-              ),
-            ),
             const SizedBox(height: 16),
 
             // Amount

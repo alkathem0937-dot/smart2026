@@ -55,6 +55,7 @@ class AIApiService {
             'ai_response': responseData['response'],
             'conversation_history': responseData.get('conversation_history', []),
             'source_documents': responseData.get('source_documents', []),
+            'suggested_questions': responseData.get('suggested_questions', []),
           };
         }
         return responseData;

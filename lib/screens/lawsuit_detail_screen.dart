@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:hijri/hijri_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
@@ -14,12 +14,16 @@ import '../config/api_config.dart';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import '../presentation/widgets/party_display_row.dart';
+import '../presentation/widgets/party_input_row.dart';
+import '../theme/app_colors.dart';
 
 /// Lawsuit Detail Screen - Updated to support legal templates
 class LawsuitDetailScreen extends StatefulWidget {
   final int? lawsuitId;
+  final int? parentLawsuitId;
 
-  const LawsuitDetailScreen({super.key, this.lawsuitId});
+  const LawsuitDetailScreen({super.key, this.lawsuitId, this.parentLawsuitId});
 
   @override
   State<LawsuitDetailScreen> createState() => _LawsuitDetailScreenState();
@@ -92,10 +96,18 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     _filingDateHijri = _convertToHijri(_filingDateGregorian!);
     _hijriDateController = TextEditingController(text: _filingDateHijri ?? '');
     
-    // Initialize with one empty row for parties and attachments
+    // Initialize with one empty row for parties and attachments with default values
     if (!_isEditMode) {
-      _plaintiffsData.add({});
-      _defendantsData.add({});
+      _plaintiffsData.add({
+        'gender': 'ذكر',
+        'nationality': 'يمني',
+        'address': 'صنعاء',
+      });
+      _defendantsData.add({
+        'gender': 'ذكر',
+        'nationality': 'يمني',
+        'address': 'صنعاء',
+      });
       _attachmentsData.add({});
     }
 
@@ -367,7 +379,11 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       _caseNumberController.text = lawsuit.caseNumber;
       _subjectController.text = lawsuit.subject ?? '';
       _descriptionController.text = lawsuit.description ?? '';
-      _selectedCaseType = lawsuit.caseType;
+      
+      // Safe assignment for Case Type Dropdown
+      const validCaseTypes = ['امر_اداء', 'دعوى', 'رد_على_دعوى', 'استئناف', 'طعن', 'civil', 'criminal', 'commercial', 'administrative', 'family'];
+      _selectedCaseType = validCaseTypes.contains(lawsuit.caseType) ? lawsuit.caseType : 'دعوى';
+      
       _selectedCaseStatus = lawsuit.caseStatus ?? 'جديد';
       _selectedGovernorate = lawsuit.governorate;
       
@@ -715,19 +731,12 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     }
   }
 
-  void _onCaseTypeChanged(String? newType) {
-    if (newType != null && newType != _selectedCaseType) {
-      setState(() {
-        _selectedCaseType = newType;
-        // Clear existing legal text controllers
-        for (var controller in _legalTextControllers.values) {
-      controller.dispose();
-    }
-        _legalTextControllers.clear();
-        _templateKeys.clear();
-      });
-      // Load new templates
-      _loadTemplates(newType);
+  void _onCaseTypeChanged(String? value) {
+    setState(() {
+      _selectedCaseType = value;
+    });
+    if (value != null) {
+      _loadTemplates(value);
     }
   }
 
@@ -762,9 +771,14 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       hijriDate = _convertToHijri(_filingDateGregorian!);
     }
     
+    String caseNumber = _caseNumberController.text.trim();
+    if (caseNumber.isEmpty) {
+      caseNumber = 'Q-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}';
+    }
+    
     final lawsuit = LawsuitModel(
       id: widget.lawsuitId,
-      caseNumber: _caseNumberController.text.trim(),
+      caseNumber: caseNumber,
       caseType: _selectedCaseType!,
       caseStatus: _selectedCaseStatus,
       subject: _subjectController.text.trim().isEmpty 
@@ -782,6 +796,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
       gregorianDate: _filingDateGregorian,
       hijriDate: hijriDate,
       courtId: _selectedCourtId,
+      parentLawsuitId: widget.parentLawsuitId,
     );
 
     if (_isEditMode) {
@@ -898,14 +913,23 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
           ),
         );
       } else if (mounted) {
-        Navigator.pop(context);
+        // PREVENT CLOSING THE SCREEN ON FAILURE so user doesn't lose data
+        // Navigator.pop(context); // Removed this line
+
         final errorMessage = provider.errorMessage ?? 'حدث خطأ في إنشاء الدعوى';
         final errorStr = errorMessage.toLowerCase();
         IconData errorIcon = Icons.error_outline;
         Color errorColor = Colors.red;
         String displayMessage = errorMessage;
         
-        if (errorStr.contains('لا يوجد اتصال') || 
+        // Better error parsing for common backend errors
+        if (errorStr.contains('400') || errorStr.contains('bad request')) {
+          displayMessage = 'البيانات المدخلة غير صحيحة. يرجى مراجعة الحقول.';
+          if (errorStr.contains('already exists') || errorStr.contains('موجود مسبقاً')) {
+            displayMessage = 'رقم الدعوى موجود مسبقاً. يرجى استخدام رقم آخر.';
+          }
+          errorIcon = Icons.warning_amber_rounded;
+        } else if (errorStr.contains('لا يوجد اتصال') || 
             errorStr.contains('network') ||
             errorStr.contains('connection')) {
           displayMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
@@ -916,10 +940,6 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
           displayMessage = 'انتهت مهلة الاتصال\nيرجى المحاولة مرة أخرى';
           errorIcon = Icons.wifi_off;
           errorColor = Colors.orange.shade700;
-        } else if (errorStr.contains('400') || 
-                   errorStr.contains('bad request')) {
-          displayMessage = 'البيانات المدخلة غير صحيحة\nيرجى التحقق من جميع الحقول';
-          errorIcon = Icons.warning_amber_rounded;
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1094,6 +1114,24 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                             initialDate: _filingDateGregorian ?? DateTime.now(),
                             firstDate: DateTime(2000),
                             lastDate: DateTime.now(),
+                            builder: (context, child) {
+                              return Theme(
+                                data: Theme.of(context).copyWith(
+                                  colorScheme: ColorScheme.light(
+                                    primary: AppColors.brand, // Navy header
+                                    onPrimary: Colors.white, // Text inside header
+                                    onSurface: AppColors.brandDark, // Text on layout
+                                    secondary: AppColors.gold,
+                                  ),
+                                  textButtonTheme: TextButtonThemeData(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: AppColors.brand, // button text color
+                                    ),
+                                  ),
+                                ),
+                                child: child!,
+                              );
+                            },
                           );
                           if (picked != null) {
                             setState(() {
@@ -1138,6 +1176,11 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                 DropdownMenuItem(value: 'رد_على_دعوى', child: Text('رد على دعوى')),
                 DropdownMenuItem(value: 'استئناف', child: Text('استئناف')),
                 DropdownMenuItem(value: 'طعن', child: Text('طعن')),
+                DropdownMenuItem(value: 'civil', child: Text('مدنية')),
+                DropdownMenuItem(value: 'criminal', child: Text('جنائية')),
+                DropdownMenuItem(value: 'commercial', child: Text('تجارية')),
+                DropdownMenuItem(value: 'administrative', child: Text('إدارية')),
+                DropdownMenuItem(value: 'personal_status', child: Text('أحوال شخصية')),
               ],
               onChanged: _onCaseTypeChanged,
               validator: (value) {
@@ -1164,7 +1207,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                             : _governorates.isEmpty
                                 ? const Text('لا توجد محافظات متاحة', style: TextStyle(color: Colors.grey))
                                 : DropdownButtonFormField<String>(
-                                value: _selectedGovernorate,
+                                value: _governorates.any((g) => g['name'] == _selectedGovernorate) ? _selectedGovernorate : null,
                                 isExpanded: true, // مهم: يضمن استخدام المساحة الكاملة
                                 decoration: InputDecoration(
                                   labelText: 'المحافظة',
@@ -1235,7 +1278,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                                 : _courts.isEmpty
                                     ? const Text('لا توجد محاكم متاحة', style: TextStyle(color: Colors.grey))
                                     : DropdownButtonFormField<int>(
-                                value: _selectedCourtId,
+                                value: _courts.any((c) => c['id'] == _selectedCourtId) ? _selectedCourtId : null,
                                 isExpanded: true, // مهم: يضمن استخدام المساحة الكاملة
                                 decoration: InputDecoration(
                                   labelText: 'المحكمة *',
@@ -1309,7 +1352,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                                   ],
                                 )
                               : DropdownButtonFormField<String>(
-                              value: _selectedGovernorate,
+                              value: _governorates.any((g) => g['name'] == _selectedGovernorate) ? _selectedGovernorate : null,
                               isExpanded: true, // مهم: يضمن استخدام المساحة الكاملة
                               decoration: InputDecoration(
                                 labelText: 'المحافظة',
@@ -1377,7 +1420,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                               : _courts.isEmpty
                                   ? const Text('لا توجد محاكم متاحة', style: TextStyle(color: Colors.grey))
                                   : DropdownButtonFormField<int>(
-                              value: _selectedCourtId,
+                              value: _courts.any((c) => c['id'] == _selectedCourtId) ? _selectedCourtId : null,
                               isExpanded: true,
                               decoration: InputDecoration(
                                 labelText: 'المحكمة *',
@@ -1432,22 +1475,6 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
             ),
             const SizedBox(height: 16),
             
-            // Case Number
-            TextFormField(
-              controller: _caseNumberController,
-              textAlign: TextAlign.right,
-              decoration: const InputDecoration(
-                labelText: 'رقم الدعوى',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.numbers),
-              ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'يرجى إدخال رقم الدعوى';
-                }
-                return null;
-              },
-            ),
             const SizedBox(height: 16),
 
             // Subject
@@ -1704,13 +1731,13 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         SizedBox(width: 60, child: Text('خيارات', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 100, child: Text('اسم الوكيل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 100, child: Text('العنوان', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 150, child: Text('اسم الوكيل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 150, child: Text('العنوان', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                         SizedBox(width: 100, child: Text('رقم الهاتف', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                         SizedBox(width: 80, child: Text('العمل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 60, child: Text('الجنس', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('الجنس', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                         SizedBox(width: 80, child: Text('الجنسية', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 100, child: Text('اسم المدعى', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 150, child: Text('اسم المدعى', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                       ],
                     ),
                   ),
@@ -1722,14 +1749,41 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                             child: Center(child: CircularProgressIndicator()),
                           )]
                         : plaintiffsToShow.isEmpty
-                            ? [const Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text('لا يوجد مدعون', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-                              )]
-                            : plaintiffsToShow.map((p) => _buildPartyRow(p, isPlaintiff: true)).toList()),
+                            ? [
+                                Padding(
+                                  padding: const EdgeInsets.all(20.0),
+                                  child: Column(
+                                    children: [
+                                      const Text('لم يتم تحديد أي مدعين لهذه الدعوى بعد', style: TextStyle(color: Colors.grey)),
+                                      const SizedBox(height: 8),
+                                      TextButton.icon(
+                                        onPressed: () => _showAddPartyDialog(isPlaintiff: true),
+                                        icon: const Icon(Icons.person_add_outlined),
+                                        label: const Text('أضف المدعي الأول الآن'),
+                                      )
+                                    ],
+                                  ),
+                                )
+                              ]
+                            : plaintiffsToShow.map((p) => PartyDisplayRow(
+                                  party: p,
+                                  isPlaintiff: true,
+                                  onEdit: () => _showAddPartyDialog(isPlaintiff: true, party: p),
+                                  onDelete: () => _deleteParty(p, isPlaintiff: true),
+                                )).toList()),
                   if (!_isEditMode)
                     ...plaintiffsDataToShow.asMap().entries.map((entry) {
-                      return _buildPartyRowData(entry.value, entry.key, isPlaintiff: true);
+                      return PartyInputRow(
+                        data: entry.value,
+                        index: entry.key,
+                        isPlaintiff: true,
+                        onDelete: () {
+                          setState(() {
+                            _plaintiffsData.removeAt(entry.key);
+                          });
+                        },
+                        onChanged: () => setState(() {}),
+                      );
                     }).toList(),
                 ],
               ),
@@ -1788,14 +1842,14 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SizedBox(width: 60, child: Text('خيارات', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 100, child: Text('اسم الوكيل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 100, child: Text('العنوان', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('خيارات', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 150, child: Text('اسم الوكيل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 150, child: Text('العنوان', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                         SizedBox(width: 100, child: Text('رقم الهاتف', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                         SizedBox(width: 80, child: Text('العمل', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 60, child: Text('الجنس', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 80, child: Text('الجنس', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                         SizedBox(width: 80, child: Text('الجنسية', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
-                        SizedBox(width: 100, child: Text('اسم المدعى عليه', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+                        SizedBox(width: 150, child: Text('اسم المدعى عليه', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                       ],
                     ),
                   ),
@@ -1807,14 +1861,41 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
                             child: Center(child: CircularProgressIndicator()),
                           )]
                         : defendantsToShow.isEmpty
-                            ? [const Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text('لا يوجد مدعى عليهم', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-                              )]
-                            : defendantsToShow.map((d) => _buildPartyRow(d, isPlaintiff: false)).toList()),
+                            ? [
+                                Padding(
+                                  padding: const EdgeInsets.all(20.0),
+                                  child: Column(
+                                    children: [
+                                      const Text('لم يتم تحديد أي مدعى عليهم لهذه الدعوى بعد', style: TextStyle(color: Colors.grey)),
+                                      const SizedBox(height: 8),
+                                      TextButton.icon(
+                                        onPressed: () => _showAddPartyDialog(isPlaintiff: false),
+                                        icon: const Icon(Icons.person_add_outlined),
+                                        label: const Text('أضف المدعى عليه الأول الآن'),
+                                      )
+                                    ],
+                                  ),
+                                )
+                              ]
+                            : defendantsToShow.map((d) => PartyDisplayRow(
+                                  party: d,
+                                  isPlaintiff: false,
+                                  onEdit: () => _showAddPartyDialog(isPlaintiff: false, party: d),
+                                  onDelete: () => _deleteParty(d, isPlaintiff: false),
+                                )).toList()),
                   if (!_isEditMode)
                     ...defendantsDataToShow.asMap().entries.map((entry) {
-                      return _buildPartyRowData(entry.value, entry.key, isPlaintiff: false);
+                      return PartyInputRow(
+                        data: entry.value,
+                        index: entry.key,
+                        isPlaintiff: false,
+                        onDelete: () {
+                          setState(() {
+                            _defendantsData.removeAt(entry.key);
+                          });
+                        },
+                        onChanged: () => setState(() {}),
+                      );
                     }).toList(),
                 ],
               ),
@@ -1846,249 +1927,6 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
     );
   }
   
-  Widget _buildPartyRow(PartyModel party, {required bool isPlaintiff}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 60,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit, size: 16, color: Colors.blue),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => _showAddPartyDialog(isPlaintiff: isPlaintiff, party: party),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 16, color: Colors.red),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () => _deleteParty(party, isPlaintiff: isPlaintiff),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(width: 100, child: Text(party.attorneyName ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis)),
-          SizedBox(width: 100, child: Text(party.address, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis)),
-          SizedBox(width: 100, child: Text(party.phone ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          SizedBox(width: 80, child: Text(party.occupation ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis)),
-          SizedBox(width: 60, child: Text(party.genderDisplay, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1)),
-          SizedBox(width: 80, child: Text(party.nationality, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis)),
-          SizedBox(width: 100, child: Text(party.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis)),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildPartyRowData(Map<String, dynamic> data, int index, {required bool isPlaintiff}) {
-    final nameController = TextEditingController(text: data['name'] ?? '');
-    final nationalityController = TextEditingController(text: data['nationality'] ?? '');
-    final genderController = TextEditingController(text: data['gender'] ?? 'ذكر');
-    final occupationController = TextEditingController(text: data['occupation'] ?? '');
-    final phoneController = TextEditingController(text: data['phone'] ?? '');
-    final addressController = TextEditingController(text: data['address'] ?? '');
-    final attorneyController = TextEditingController(text: data['attorney_name'] ?? '');
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 60,
-            child: IconButton(
-              icon: const Icon(Icons.delete, size: 16, color: Colors.red),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: () {
-                setState(() {
-                  if (isPlaintiff) {
-                    _plaintiffsData.removeAt(index);
-                  } else {
-                    _defendantsData.removeAt(index);
-                  }
-                });
-              },
-            ),
-          ),
-          SizedBox(
-            width: 100,
-            child: TextFormField(
-              controller: attorneyController,
-              textAlign: TextAlign.center,
-              decoration: const InputDecoration(
-                hintText: 'وكيل المدعى',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 10),
-              maxLength: 70,
-              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
-                return const SizedBox.shrink();
-              },
-              onChanged: (value) {
-                data['attorney_name'] = value;
-              },
-            ),
-          ),
-          SizedBox(
-            width: 100,
-            child: TextFormField(
-              controller: addressController,
-              textAlign: TextAlign.center,
-              decoration: const InputDecoration(
-                hintText: 'عنوان المدعى',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 10),
-              maxLength: 70,
-              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
-                return const SizedBox.shrink();
-              },
-              onChanged: (value) {
-                data['address'] = value;
-              },
-            ),
-          ),
-          SizedBox(
-            width: 100,
-            child: TextFormField(
-              controller: phoneController,
-              textAlign: TextAlign.center,
-              decoration: InputDecoration(
-                hintText: isPlaintiff ? 'هاتف المدعى' : 'هاتف المدعى :',
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                isDense: true,
-                errorText: data['phone_error'],
-                errorStyle: const TextStyle(fontSize: 8),
-              ),
-              style: const TextStyle(fontSize: 10),
-              keyboardType: TextInputType.phone,
-              onChanged: (value) {
-                data['phone'] = value;
-                if (value.isEmpty) {
-                  data['phone_error'] = 'مطلوب';
-                } else {
-                  data['phone_error'] = null;
-                }
-                setState(() {});
-              },
-            ),
-          ),
-          SizedBox(
-            width: 80,
-            child: TextFormField(
-              controller: occupationController,
-              textAlign: TextAlign.center,
-              decoration: const InputDecoration(
-                hintText: 'العمل',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 10),
-              maxLength: 70,
-              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
-                return const SizedBox.shrink();
-              },
-              onChanged: (value) {
-                data['occupation'] = value;
-              },
-            ),
-          ),
-          SizedBox(
-            width: 60,
-            child: DropdownButtonFormField<String>(
-              value: data['gender'] ?? 'ذكر',
-              decoration: const InputDecoration(
-                hintText: 'ذكر',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                isDense: true,
-              ),
-              dropdownColor: Colors.white,
-              style: const TextStyle(fontSize: 10, color: Colors.black),
-              items: const [
-                DropdownMenuItem(
-                  value: 'ذكر',
-                  child: Text(
-                    'ذكر',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, color: Colors.black),
-                  ),
-                ),
-                DropdownMenuItem(
-                  value: 'أنثى',
-                  child: Text(
-                    'أنثى',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, color: Colors.black),
-                  ),
-                ),
-              ],
-              onChanged: (value) {
-                data['gender'] = value;
-                setState(() {});
-              },
-            ),
-          ),
-          SizedBox(
-            width: 80,
-            child: TextFormField(
-              controller: nationalityController,
-              textAlign: TextAlign.center,
-              decoration: const InputDecoration(
-                hintText: 'يمني',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 10),
-              onChanged: (value) {
-                data['nationality'] = value;
-              },
-            ),
-          ),
-          SizedBox(
-            width: 100,
-            child: TextFormField(
-              controller: nameController,
-              textAlign: TextAlign.center,
-              decoration: InputDecoration(
-                hintText: isPlaintiff ? 'اسم المدعى' : 'اسم المدعى عليه',
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-              maxLength: 70,
-              buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
-                return const SizedBox.shrink();
-              },
-              onChanged: (value) {
-                data['name'] = value;
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildPartyCard(PartyModel party, {required bool isPlaintiff}) {
     return ListTile(
@@ -2129,7 +1967,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
   }) async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: party?.name ?? '');
-    final nationalityController = TextEditingController(text: party?.nationality ?? '');
+    final nationalityController = TextEditingController(text: party?.nationality ?? (party == null ? 'يمني' : ''));
     final occupationController = TextEditingController(text: party?.occupation ?? '');
     final addressController = TextEditingController(text: party?.address ?? '');
     final phoneController = TextEditingController(text: party?.phone ?? '');
@@ -2595,7 +2433,7 @@ class _LawsuitDetailScreenState extends State<LawsuitDetailScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 60,
+            width: 80,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

@@ -43,6 +43,11 @@ class ChatResponseSerializer(serializers.Serializer):
         required=False,
         default=[]
     )
+    suggested_questions = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=[]
+    )
 
 
 class AddDocumentsSerializer(serializers.Serializer):

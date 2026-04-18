@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
@@ -179,11 +183,11 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: AppColors.lightBackground,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('المكتبة القانونية', style: TextStyle(fontFamily: 'Cairo')),
-        backgroundColor: const Color(0xFF1A237E),
+        backgroundColor: AppColors.brand,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -210,7 +214,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
               Container(
                 padding: EdgeInsets.fromLTRB(16, isCompact ? 8 : 16, 16, isCompact ? 8 : 16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A237E),
+                  color: AppColors.brand,
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(24),
                     bottomRight: Radius.circular(24),
@@ -245,7 +249,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                         decoration: InputDecoration(
                           hintText: 'ابحث في نص المادة أو رقمها...',
                           hintStyle: const TextStyle(fontFamily: 'Cairo', color: Colors.grey),
-                          prefixIcon: const Icon(Icons.search, color: Color(0xFF1A237E)),
+                          prefixIcon: const Icon(Icons.search, color: AppColors.brand),
                           suffixIcon: _searchController.text.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear),
@@ -255,7 +259,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                                   },
                                 )
                               : IconButton(
-                                  icon: const Icon(Icons.search, color: Color(0xFF1A237E)),
+                                  icon: const Icon(Icons.search, color: AppColors.brand),
                                   onPressed: () => _searchArticles(),
                                 ),
                           border: InputBorder.none,
@@ -269,6 +273,42 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                     ),
                     // Hide extra elements when keyboard is visible (compact mode)
                     if (!isCompact) ...[
+                      const SizedBox(height: 12),
+                      // Search Suggestions
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            const Text('كلمات شائعة:', style: TextStyle(color: Colors.white70, fontSize: 13, fontFamily: 'Cairo')),
+                            const SizedBox(width: 8),
+                            ...['أحوال شخصية', 'مرافعات', 'إيجارات', 'غرامة', 'نفقة', 'عقد'].map((suggestion) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: () {
+                                    _searchController.text = suggestion;
+                                    _searchArticles();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: Colors.white30),
+                                    ),
+                                    child: Text(
+                                      suggestion,
+                                      style: const TextStyle(fontSize: 12, fontFamily: 'Cairo', color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       const SizedBox(height: 8),
                       // Search Button
                       SizedBox(
@@ -278,7 +318,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                           icon: const Icon(Icons.search),
                           label: const Text('بحث', style: TextStyle(fontFamily: 'Cairo', fontSize: 16)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFE91E63),
+                            backgroundColor: AppColors.gold,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -395,15 +435,15 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
         label: Text(
           label.length > 20 ? '${label.substring(0, 20)}...' : label,
           style: const TextStyle(
-            color: Color(0xFF1A237E),
+            color: Color(0xFF1B5E3B),
             fontSize: 12,
             fontFamily: 'Cairo',
             fontWeight: FontWeight.w600,
           ),
         ),
         backgroundColor: Colors.white,
-        side: BorderSide(color: const Color(0xFFE91E63).withOpacity(0.3), width: 1.5),
-        deleteIcon: const Icon(Icons.close, size: 18, color: Color(0xFFE91E63)),
+        side: BorderSide(color: AppColors.gold.withOpacity(0.3), width: 1.5),
+        deleteIcon: const Icon(Icons.close, size: 18, color: AppColors.gold),
         onDeleted: onRemove,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -458,14 +498,14 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1A237E).withOpacity(0.1),
+                      color: AppColors.brand.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       'مادة ${article['article_number'] ?? ''}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A237E),
+                        color: AppColors.brand,
                         fontFamily: 'Cairo',
                       ),
                     ),
@@ -741,7 +781,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                     Navigator.pop(context);
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1A237E),
+                    backgroundColor: AppColors.brand,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
@@ -789,7 +829,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    const Icon(Icons.account_balance, color: Color(0xFF1A237E)),
+                    const Icon(Icons.account_balance, color: AppColors.brand),
                     const SizedBox(width: 12),
                     const Text(
                       'المصادر القانونية',
@@ -848,7 +888,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                                   style: TextStyle(
                                     fontFamily: 'Cairo',
                                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                    color: isSelected ? const Color(0xFF1A237E) : Colors.black87,
+                                    color: isSelected ? const Color(0xFF1B5E3B) : Colors.black87,
                                   ),
                                 ),
                                 trailing: Row(
@@ -871,7 +911,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                                     ),
                                     if (isSelected) ...[
                                       const SizedBox(width: 8),
-                                      const Icon(Icons.check_circle, color: Color(0xFF1A237E)),
+                                      const Icon(Icons.check_circle, color: Color(0xFF1B5E3B)),
                                     ],
                                   ],
                                 ),
@@ -893,7 +933,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.bar_chart, color: Color(0xFF1A237E)),
+            const Icon(Icons.bar_chart, color: Color(0xFF1B5E3B)),
             const SizedBox(width: 8),
             const Text('إحصائيات المكتبة', style: TextStyle(fontFamily: 'Cairo')),
           ],
@@ -960,12 +1000,12 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A237E).withOpacity(0.05),
+        color: const Color(0xFF1B5E3B).withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(icon, color: const Color(0xFF1A237E), size: 28),
+          Icon(icon, color: const Color(0xFF1B5E3B), size: 28),
           const SizedBox(width: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -979,7 +1019,7 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
-                  color: Color(0xFF1A237E),
+                  color: Color(0xFF1B5E3B),
                   fontFamily: 'Cairo',
                 ),
               ),
@@ -1075,7 +1115,7 @@ class _ArticleDetailsSheetState extends State<_ArticleDetailsSheet> {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF1A237E), Color(0xFF3949AB)],
+                        colors: [Color(0xFF1B5E3B), Color(0xFF2D8B57)],
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1134,7 +1174,7 @@ class _ArticleDetailsSheetState extends State<_ArticleDetailsSheet> {
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: Color(0xFF1A237E),
+                              color: Color(0xFF1B5E3B),
                               fontFamily: 'Cairo',
                             ),
                           ),

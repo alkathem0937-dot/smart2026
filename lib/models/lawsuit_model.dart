@@ -3,6 +3,8 @@ class LawsuitModel {
   final int? id;
   final String caseNumber;
   final String caseType;
+  final int? caseYearHijri;
+  final String? caseSubtype;
   final String status;
   final String? caseStatus;
   final String? subject;
@@ -30,6 +32,11 @@ class LawsuitModel {
   final bool isDeleted;
   final DateTime? deletedAt;
   final int? parentLawsuitId;
+  final int? caseId;
+  final int? clientId;
+  final String? clientName;
+  final int? createdById;
+  final String? createdByName;
 
   // Counts
   final int childLawsuitsCount;
@@ -37,11 +44,14 @@ class LawsuitModel {
   final int defendantsCount;
   final int attachmentsCount;
   final int hearingsCount;
+  final bool isSynced;
 
   LawsuitModel({
     this.id,
     required this.caseNumber,
     required this.caseType,
+    this.caseYearHijri,
+    this.caseSubtype,
     this.status = 'pending',
     this.caseStatus,
     this.subject,
@@ -67,11 +77,17 @@ class LawsuitModel {
     this.isDeleted = false,
     this.deletedAt,
     this.parentLawsuitId,
+    this.caseId,
+    this.clientId,
+    this.clientName,
+    this.createdById,
+    this.createdByName,
     this.childLawsuitsCount = 0,
     this.plaintiffsCount = 0,
     this.defendantsCount = 0,
     this.attachmentsCount = 0,
     this.hearingsCount = 0,
+    this.isSynced = true,
   });
 
   factory LawsuitModel.fromJson(Map<String, dynamic> json) {
@@ -79,6 +95,8 @@ class LawsuitModel {
       id: json['id'],
       caseNumber: json['case_number'] ?? '',
       caseType: json['case_type'] ?? '',
+      caseYearHijri: json['case_year_hijri'],
+      caseSubtype: json['case_subtype'],
       status: json['status'] ?? 'pending',
       caseStatus: json['case_status'],
       subject: json['subject'],
@@ -108,16 +126,34 @@ class LawsuitModel {
       archiveStatus: json['archive_status'] ?? 'active',
       archiveDate: json['archive_date'] != null ? DateTime.parse(json['archive_date']) : null,
       archiveReason: json['archive_reason'],
-      isDeleted: json['is_deleted'] ?? false,
+      isDeleted: _parseBool(json['is_deleted']),
       deletedAt: json['deleted_at'] != null ? DateTime.parse(json['deleted_at']) : null,
-      parentLawsuitId: json['parent_lawsuit'],
-      // Counts
+      parentLawsuitId: json['parent_lawsuit'] ?? json['parent_lawsuit_id'],
+      caseId: json['case'] ?? json['case_id'],
+      clientId: json['client'] ?? json['client_id'],
+      clientName: json['client_name'],
+      createdById: json['created_by_detail'] != null ? json['created_by_detail']['id'] : (json['created_by_id'] ?? json['created_by']),
+      createdByName: json['created_by_detail'] != null ? 
+        '${json['created_by_detail']['first_name'] ?? ''} ${json['created_by_detail']['last_name'] ?? ''}'.trim() : 
+        (json['created_by_name'] ?? json['created_by_username']),
       childLawsuitsCount: json['child_lawsuits_count'] ?? 0,
       plaintiffsCount: json['plaintiffs_count'] ?? 0,
       defendantsCount: json['defendants_count'] ?? 0,
       attachmentsCount: json['attachments_count'] ?? 0,
       hearingsCount: json['hearings_count'] ?? 0,
+      isSynced: _parseBool(json['is_synced'], defaultValue: true),
     );
+  }
+
+  static bool _parseBool(dynamic value, {bool defaultValue = false}) {
+    if (value == null) return defaultValue;
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) {
+      final s = value.toLowerCase();
+      return s == '1' || s == 'true';
+    }
+    return defaultValue;
   }
 
   Map<String, dynamic> toJson() {
@@ -125,22 +161,67 @@ class LawsuitModel {
       if (id != null) 'id': id,
       'case_number': caseNumber,
       'case_type': caseType,
-      if (status.isNotEmpty) 'status': status,
-      if (caseStatus != null) 'case_status': caseStatus,
-      if (subject != null) 'subject': subject,
-      if (description != null) 'description': description,
-      if (facts != null) 'facts': facts,
-      if (legalBasis != null) 'legal_basis': legalBasis,
-      if (legalReasons != null) 'legal_reasons': legalReasons,
-      if (requests != null) 'requests': requests,
-      if (governorate != null) 'governorate': governorate,
-      if (notes != null) 'notes': notes,
+      'case_year_hijri': caseYearHijri,
+      'case_subtype': caseSubtype,
+      'case_status': caseStatus ?? (status == 'pending' ? 'جديد' : status),
+      'subject': subject,
+      'status': status,
+      'description': description,
+      'facts': facts,
+      'legal_basis': legalBasis,
+      'legal_reasons': legalReasons,
+      'requests': requests,
+      'governorate': governorate,
+      'notes': notes,
       if (filingDate != null) 'filing_date': filingDate!.toIso8601String().split('T')[0],
       if (gregorianDate != null) 'gregorian_date': gregorianDate!.toIso8601String().split('T')[0],
-      if (hijriDate != null) 'hijri_date': hijriDate,
-      if (courtId != null) 'court_fk': courtId,
-      if (judgeId != null) 'judge': judgeId,
-      if (parentLawsuitId != null) 'parent_lawsuit': parentLawsuitId,
+      'hijri_date': hijriDate,
+      'court_fk': courtId,
+      'judge': judgeId,
+      'parent_lawsuit': parentLawsuitId,
+      'case': caseId,
+      'client': clientId,
+    };
+  }
+
+  // Helper for internal DB storage
+  Map<String, dynamic> toLocalJson() {
+    return {
+      if (id != null) 'id': id,
+      'case_number': caseNumber,
+      'case_type': caseType,
+      'case_year_hijri': caseYearHijri,
+      'case_subtype': caseSubtype,
+      'status': status,
+      'case_status': caseStatus,
+      'subject': subject,
+      'description': description,
+      'facts': facts,
+      'legal_basis': legalBasis,
+      'legal_reasons': legalReasons,
+      'requests': requests,
+      'governorate': governorate,
+      'notes': notes,
+      if (filingDate != null) 'filing_date': filingDate!.toIso8601String(),
+      if (gregorianDate != null) 'gregorian_date': gregorianDate!.toIso8601String(),
+      'hijri_date': hijriDate,
+      'court_fk': courtId,
+      'court_name': courtName,
+      'judge': judgeId,
+      'judge_name': judgeName,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
+      'archive_status': archiveStatus,
+      'archive_date': archiveDate?.toIso8601String(),
+      'archive_reason': archiveReason,
+      'is_deleted': isDeleted ? 1 : 0,
+      'deleted_at': deletedAt?.toIso8601String(),
+      'parent_lawsuit_id': parentLawsuitId,
+      'client_id': clientId,
+      'client_name': clientName,
+      'created_by_id': createdById,
+      'created_by_name': createdByName,
+      'is_synced': isSynced ? 1 : 0,
     };
   }
 

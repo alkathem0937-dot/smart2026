@@ -1,12 +1,15 @@
-
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'dart:async';
-import 'package:flutter_html/flutter_html.dart';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 
-import '../services/api_service.dart';
-import '../providers/auth_provider.dart';
-
+/// ─────────────────────────────────────────────────────────────
+///  دليل الإجراءات للأمين الشرعي
+///  يقرأ من قاعدة بيانات legal.db المحلية
+///  12 فصل  •  12,459 فقرة  •  بحث ذكي فوري
+/// ─────────────────────────────────────────────────────────────
 class ProceduresGuideScreen extends StatefulWidget {
   const ProceduresGuideScreen({Key? key}) : super(key: key);
 
@@ -15,473 +18,578 @@ class ProceduresGuideScreen extends StatefulWidget {
 }
 
 class _ProceduresGuideScreenState extends State<ProceduresGuideScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  
-  List<dynamic> _procedures = [];
-  List<dynamic> _sources = [];
-  
-  String? _selectedSource;
-  bool _isLoading = false;
-  bool _isLoadingMore = false;
-  int _currentPage = 1;
-  int _totalCount = 0;
-  bool _hasMore = false;
+  // ── ألوان ──
+  static const _brand = Color(0xFF1B5E3B);
+  static const _gold = Color(0xFFD4A940);
+
+  // ── أيقونات وألوان الفصول ──
+  static const _chapterMeta = <int, _ChMeta>{
+    1: _ChMeta('مبادئ العلاقات القانونية', Icons.gavel_rounded, Color(0xFF1E3A8A)),
+    2: _ChMeta('الخصومة الجنائية', Icons.shield_rounded, Color(0xFFDC2626)),
+    3: _ChMeta('الجوانب الفنية في العقد', Icons.edit_document, Color(0xFF7C3AED)),
+    4: _ChMeta('هيكل العقد / مكونات العقد', Icons.account_tree_rounded, Color(0xFF0891B2)),
+    5: _ChMeta('بنود وعناصر العقد', Icons.list_alt_rounded, Color(0xFF059669)),
+    6: _ChMeta('ملحق', Icons.attach_file_rounded, Color(0xFF6B7280)),
+    7: _ChMeta('القواعد الإجرائية لعمل الموثق والأمين', Icons.menu_book_rounded, Color(0xFF92400E)),
+    8: _ChMeta('القواعد الإجرائية العامة للتوثيق', Icons.rule_rounded, Color(0xFF1B5E3B)),
+    9: _ChMeta('القواعد الإجرائية الخاصة (التصرفات العقارية)', Icons.home_work_rounded, Color(0xFFB45309)),
+    10: _ChMeta('التعاميم الوزارية المتعلقة بالتوثيق', Icons.campaign_rounded, Color(0xFF7C2D12)),
+    11: _ChMeta('قواعد حساب المواريث', Icons.family_restroom_rounded, Color(0xFF4338CA)),
+    12: _ChMeta('قواعد الحساب والمساحة', Icons.calculate_rounded, Color(0xFF0369A1)),
+  };
+
+  Database? _db;
+  bool _dbLoading = true;
+  String? _dbError;
+
+  // ── State ──
+  List<_Chapter> _chapters = [];
+  int? _selectedChapter; // null = show chapters list
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+  String _query = '';
   Timer? _debounce;
-  
+  final _searchCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+
   @override
   void initState() {
     super.initState();
-    _loadSources();
-    _searchProcedures(); // Initial load
-    
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
-          !_isLoading &&
-          !_isLoadingMore &&
-          _hasMore) {
-        _loadMore();
-      }
-    });
+    _initDb();
   }
-  
+
   @override
   void dispose() {
-    _searchController.dispose();
-    _scrollController.dispose();
+    _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     _debounce?.cancel();
+    _db?.close();
     super.dispose();
   }
-  
-  Future<void> _loadSources() async {
+
+  // ──────────────────── DB ────────────────────
+
+  Future<void> _initDb() async {
     try {
-      final apiService = Provider.of<AuthProvider>(context, listen: false).apiService;
-      if (apiService != null) {
-        final result = await apiService.getLegalProceduresSources();
-        if (mounted) {
-          setState(() {
-            _sources = result['sources'] ?? [];
-          });
-        }
+      final dbPath = p.join(await getDatabasesPath(), 'legal.db');
+
+      // Copy asset to writable location (once)
+      if (!File(dbPath).existsSync()) {
+        final data = await rootBundle.load('legal.db');
+        final bytes = data.buffer.asUint8List();
+        await File(dbPath).writeAsBytes(bytes, flush: true);
       }
+
+      _db = await openDatabase(dbPath, readOnly: true);
+      await _loadChapters();
     } catch (e) {
-      debugPrint('Error loading sources: $e');
+      if (mounted) setState(() { _dbError = e.toString(); _dbLoading = false; });
     }
   }
 
-  Future<void> _searchProcedures({bool loadMore = false}) async {
-    if (!loadMore) {
-      if (mounted) {
-        setState(() {
-          _isLoading = true;
-          _currentPage = 1;
-          _procedures = [];
-        });
-      }
-    } else {
-      if (mounted) {
-        setState(() {
-          _isLoadingMore = true;
-        });
-      }
+  Future<void> _loadChapters() async {
+    if (_db == null) return;
+    final rows = await _db!.rawQuery('''
+      SELECT p.id, p.text,
+        (SELECT COUNT(*) FROM sentences WHERE paragraph_id = p.id) AS cnt
+      FROM paragraphs p ORDER BY p.id
+    ''');
+
+    final chapters = <_Chapter>[];
+    for (final r in rows) {
+      final id = r['id'] as int;
+      final fullText = (r['text'] as String?) ?? '';
+      final cnt = (r['cnt'] as int?) ?? 0;
+      final meta = _chapterMeta[id];
+      chapters.add(_Chapter(
+        id: id,
+        title: meta?.title ?? fullText.split('\n').first.trim(),
+        icon: meta?.icon ?? Icons.article_rounded,
+        color: meta?.color ?? _brand,
+        sentenceCount: cnt,
+      ));
     }
+
+    if (mounted) setState(() { _chapters = chapters; _dbLoading = false; });
+  }
+
+  // ── Search ──
+
+  Future<void> _search(String q) async {
+    if (_db == null) return;
+    _query = q.trim();
+    if (_query.isEmpty) {
+      setState(() { _searchResults = []; _isSearching = false; });
+      return;
+    }
+    setState(() => _isSearching = true);
 
     try {
-      final apiService = Provider.of<AuthProvider>(context, listen: false).apiService;
-      if (apiService != null) {
-        final result = await apiService.getLegalProcedures(
-          page: _currentPage,
-          search: _searchController.text,
-          source: _selectedSource,
-        );
-        
-        if (mounted) {
-          final results = result['results'] as List?;
-          final count = result['count'] as int? ?? 0;
-          
-          setState(() {
-            if (loadMore) {
-              _procedures.addAll(results ?? []);
-            } else {
-              _procedures = results ?? [];
-            }
-            
-            _totalCount = count;
-            _hasMore = _procedures.length < _totalCount;
-            _isLoading = false;
-            _isLoadingMore = false;
-          });
-        }
-      }
+      // Use LIKE on sentences for smart search
+      final results = await _db!.rawQuery('''
+        SELECT s.id, s.paragraph_id, s.text,
+          (SELECT GROUP_CONCAT(s2.text, ' ')
+           FROM sentences s2
+           WHERE s2.paragraph_id = s.paragraph_id
+             AND s2.id BETWEEN MAX(1, s.id - 2) AND s.id + 2
+          ) AS context_text
+        FROM sentences s
+        WHERE s.text LIKE ?
+        ORDER BY s.paragraph_id, s.id
+        LIMIT 100
+      ''', ['%$_query%']);
+
+      if (mounted) setState(() { _searchResults = results; _isSearching = false; });
     } catch (e) {
-      debugPrint('Error searching procedures: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isLoadingMore = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('حدث خطأ أثناء البحث: $e')),
-        );
-      }
+      if (mounted) setState(() => _isSearching = false);
     }
   }
-  
-  Future<void> _loadMore() async {
-    _currentPage++;
-    await _searchProcedures(loadMore: true);
+
+  void _onSearchChanged(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () => _search(q));
   }
 
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      _searchProcedures();
-    });
-  }
+  // ── Load chapter sentences ──
 
-  void _showProcedureDetails(Map<String, dynamic> procedure) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ProcedureDetailsSheet(procedure: procedure),
+  Future<List<String>> _loadChapterSentences(int paragraphId) async {
+    if (_db == null) return [];
+    final rows = await _db!.rawQuery(
+      'SELECT text FROM sentences WHERE paragraph_id = ? ORDER BY id', [paragraphId],
     );
+    return rows.map((r) => (r['text'] as String?) ?? '').toList();
   }
+
+  // ──────────────────── Build ────────────────────
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: const Text('دليل الإجراءات', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body: Column(
+      backgroundColor: const Color(0xFFF7F8FA),
+      body: _dbLoading
+          ? _buildLoading()
+          : _dbError != null
+              ? _buildDbError()
+              : CustomScrollView(
+                  controller: _scrollCtrl,
+                  slivers: [
+                    _buildAppBar(),
+                    _buildSearchBar(),
+                    if (_query.isNotEmpty)
+                      _buildSearchResults()
+                    else if (_selectedChapter != null)
+                      _buildChapterContent()
+                    else
+                      _buildChaptersList(),
+                  ],
+                ),
+    );
+  }
+
+  Widget _buildLoading() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Filter & Search Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Search Bar
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    textDirection: TextDirection.rtl,
-                    decoration: InputDecoration(
-                      hintText: 'ابحث في الإجراءات...',
-                      hintStyle: const TextStyle(fontFamily: 'Cairo', color: Colors.grey),
-                      prefixIcon: const Icon(Icons.search, color: Color(0xFF1A237E)),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                _searchProcedures();
-                              },
-                            )
-                          : null,
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    ),
-                    onChanged: _onSearchChanged,
-                  ),
-                ),
-                if (_sources.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  // Source Filter
-                  SizedBox(
-                    height: 40,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _sources.length + 1,
-                      separatorBuilder: (c, i) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        if (index == 0) {
-                          final isSelected = _selectedSource == null;
-                          return FilterChip(
-                            label: const Text('الكل', style: TextStyle(fontFamily: 'Cairo')),
-                            selected: isSelected,
-                            onSelected: (bool selected) {
-                              setState(() {
-                                _selectedSource = null;
-                              });
-                              _searchProcedures();
-                            },
-                            backgroundColor: Colors.grey[100],
-                            selectedColor: const Color(0xFF1A237E).withOpacity(0.1),
-                            checkmarkColor: const Color(0xFF1A237E),
-                            labelStyle: TextStyle(
-                              color: isSelected ? const Color(0xFF1A237E) : Colors.black87,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              fontFamily: 'Cairo',
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                              side: isSelected 
-                                ? const BorderSide(color: Color(0xFF1A237E), width: 1)
-                                : BorderSide.none,
-                            ),
-                          );
-                        }
-                        
-                        final source = _sources[index - 1];
-                        final title = source['source_title'];
-                        final isSelected = _selectedSource == title;
-                        
-                        return FilterChip(
-                          label: Text(title, style: const TextStyle(fontFamily: 'Cairo')),
-                          selected: isSelected,
-                          onSelected: (bool selected) {
-                            setState(() {
-                              _selectedSource = selected ? title : null;
-                            });
-                            _searchProcedures();
-                          },
-                          backgroundColor: Colors.grey[100],
-                          selectedColor: const Color(0xFF1A237E).withOpacity(0.1),
-                          checkmarkColor: const Color(0xFF1A237E),
-                          labelStyle: TextStyle(
-                            color: isSelected ? const Color(0xFF1A237E) : Colors.black87,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            fontFamily: 'Cairo',
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            side: isSelected 
-                              ? const BorderSide(color: Color(0xFF1A237E), width: 1)
-                              : BorderSide.none,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          
-          // Results
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _procedures.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.menu_book, size: 64, color: Colors.grey[300]),
-                            const SizedBox(height: 16),
-                            Text(
-                              'ابحث في دليل الإجراءات',
-                              style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[600], fontSize: 16),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _procedures.length + (_isLoadingMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (index == _procedures.length) {
-                             return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
-                          }
-                          
-                          final procedure = _procedures[index];
-                          final bodyText = procedure['body_highlighted'] ?? procedure['body'] ?? '';
-                          // Handle titles that might be too long
-                          final title = procedure['title'] ?? 'بدون عنوان';
-                          final source = procedure['source_title'] ?? '';
-                          
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            elevation: 2,
-                            shadowColor: Colors.black12,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            child: InkWell(
-                              onTap: () => _showProcedureDetails(procedure),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (source.isNotEmpty)
-                                      Container(
-                                        margin: const EdgeInsets.only(bottom: 8),
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFE8EAF6),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          source,
-                                          style: const TextStyle(
-                                            fontFamily: 'Cairo',
-                                            fontSize: 10,
-                                            color: Color(0xFF1A237E),
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    Text(
-                                      title,
-                                      style: const TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                    if (bodyText.isNotEmpty) ...[
-                                      const SizedBox(height: 8),
-                                      Html(
-                                        data: bodyText,
-                                        style: {
-                                          "body": Style(
-                                            fontFamily: 'Cairo',
-                                            fontSize: FontSize(13),
-                                            color: Colors.grey[700],
-                                            maxLines: 3,
-                                            textOverflow: TextOverflow.ellipsis,
-                                            margin: Margins.zero,
-                                          ),
-                                          "mark": Style(
-                                            backgroundColor: const Color(0xFFFFEB3B),
-                                            color: Colors.black,
-                                          ),
-                                        },
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-          ),
+          CircularProgressIndicator(color: _brand),
+          SizedBox(height: 16),
+          Text('جاري تحميل الدليل...', style: TextStyle(fontSize: 15)),
         ],
       ),
     );
   }
-}
 
-class _ProcedureDetailsSheet extends StatelessWidget {
-  final Map<String, dynamic> procedure;
+  Widget _buildDbError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 56, color: Colors.red),
+            const SizedBox(height: 16),
+            const Text('خطأ في تحميل قاعدة البيانات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(_dbError!, style: TextStyle(fontSize: 12, color: Colors.grey[600]), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            ElevatedButton(onPressed: () { setState(() { _dbLoading = true; _dbError = null; }); _initDb(); }, child: const Text('إعادة المحاولة')),
+          ],
+        ),
+      ),
+    );
+  }
 
-  const _ProcedureDetailsSheet({Key? key, required this.procedure}) : super(key: key);
+  // ── SliverAppBar ──
 
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            children: [
-              // Handle bar
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
+  SliverAppBar _buildAppBar() {
+    return SliverAppBar(
+      expandedHeight: _selectedChapter == null && _query.isEmpty ? 160 : 0,
+      pinned: true,
+      backgroundColor: _brand,
+      foregroundColor: Colors.white,
+      leading: _selectedChapter != null
+          ? IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => setState(() => _selectedChapter = null))
+          : null,
+      title: Text(
+        _selectedChapter != null
+            ? (_chapterMeta[_selectedChapter]?.title ?? 'فصل $_selectedChapter')
+            : 'دليل الإجراءات',
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      flexibleSpace: _selectedChapter == null && _query.isEmpty
+          ? FlexibleSpaceBar(
+              background: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF0D3B23), Color(0xFF1B5E3B), Color(0xFF1E7A4D)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
                   ),
                 ),
-              ),
-              
-              // Header
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Column(
+                child: Stack(
                   children: [
-                    Text(
-                      procedure['title'] ?? 'تفاصيل الإجراء',
-                      style: const TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A237E),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    if (procedure['source_title'] != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8EAF6),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          procedure['source_title'],
-                          style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 12,
-                            color: Color(0xFF1A237E),
-                            fontWeight: FontWeight.bold,
+                    Positioned(top: -20, right: -20, child: _circle(80, Colors.white, 0.06)),
+                    Positioned(bottom: -30, left: -30, child: _circle(100, _gold, 0.1)),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 80, 20, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          const Text('دليل الإجراءات للأمين الشرعي', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_chapters.length} فصل  •  ${_chapters.fold<int>(0, (s, c) => s + c.sentenceCount)} فقرة  •  بحث ذكي فوري',
+                            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
                           ),
-                        ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),
-              const Divider(height: 1),
-              
-              // Content
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(24),
-                  child: Html(
-                    data: procedure['body'] ?? '',
-                    style: {
-                      "body": Style(
-                          fontFamily: 'Cairo',
-                          fontSize: FontSize(16),
-                          lineHeight: LineHeight(1.8),
-                          textAlign: TextAlign.justify,
-                          color: Colors.black87,
-                      ),
-                    },
+            )
+          : null,
+    );
+  }
+
+  Widget _circle(double size, Color color, double opacity) {
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color.withValues(alpha: opacity)),
+    );
+  }
+
+  // ── Search bar ──
+
+  SliverToBoxAdapter _buildSearchBar() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))],
+        ),
+        child: TextField(
+          controller: _searchCtrl,
+          textDirection: TextDirection.rtl,
+          decoration: InputDecoration(
+            hintText: 'بحث ذكي في الدليل...',
+            hintStyle: TextStyle(fontSize: 14, color: Colors.grey[400]),
+            prefixIcon: _isSearching
+                ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _brand)))
+                : const Icon(Icons.search_rounded, color: _brand),
+            suffixIcon: _searchCtrl.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    onPressed: () { _searchCtrl.clear(); setState(() { _query = ''; _searchResults = []; }); },
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+          onChanged: (q) { setState(() {}); _onSearchChanged(q); },
+        ),
+      ),
+    );
+  }
+
+  // ── Chapters list ──
+
+  SliverToBoxAdapter _buildChaptersList() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          children: [
+            for (final ch in _chapters) _chapterCard(ch),
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chapterCard(_Chapter ch) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () {
+            setState(() => _selectedChapter = ch.id);
+            _scrollCtrl.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: ch.color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  child: Icon(ch.icon, color: ch.color, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(ch.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 3),
+                      Text('${ch.sentenceCount} فقرة', style: TextStyle(fontSize: 11, color: Colors.grey[400])),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: ch.color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
+                  child: Text('${ch.id}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ch.color)),
+                ),
+                const SizedBox(width: 6),
+                Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey[300]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Chapter content ──
+
+  SliverToBoxAdapter _buildChapterContent() {
+    return SliverToBoxAdapter(
+      child: FutureBuilder<List<String>>(
+        future: _loadChapterSentences(_selectedChapter!),
+        builder: (ctx, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator(color: _brand)));
+          }
+          final sentences = snap.data ?? [];
+          if (sentences.isEmpty) {
+            return const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('لا توجد بيانات')));
+          }
+
+          // Group sentences into readable paragraphs (every ~10 sentences)
+          final fullText = sentences.join('\n');
+
+          return Column(
+            children: [
+              // Copy button
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Row(
+                  children: [
+                    Text('${sentences.length} فقرة', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: fullText));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ النص'), duration: Duration(seconds: 2)));
+                      },
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: const Text('نسخ الكل', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(foregroundColor: _brand),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 30),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
+                ),
+                child: SelectableText(
+                  fullText,
+                  textDirection: TextDirection.rtl,
+                  style: const TextStyle(fontSize: 15, height: 2.0, color: Color(0xFF1A2138)),
                 ),
               ),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
+
+  // ── Search results ──
+
+  SliverToBoxAdapter _buildSearchResults() {
+    if (_isSearching) {
+      return const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator(color: _brand))));
+    }
+    if (_searchResults.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Center(child: Column(
+            children: [
+              Icon(Icons.search_off_rounded, size: 48, color: Colors.grey[300]),
+              const SizedBox(height: 12),
+              Text('لا توجد نتائج لـ "$_query"', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+            ],
+          )),
+        ),
+      );
+    }
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text('${_searchResults.length} نتيجة', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+            ),
+            for (final r in _searchResults) _searchResultCard(r),
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _searchResultCard(Map<String, dynamic> r) {
+    final paraId = r['paragraph_id'] as int;
+    final text = (r['text'] as String?) ?? '';
+    final contextText = (r['context_text'] as String?) ?? text;
+    final meta = _chapterMeta[paraId];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            _searchCtrl.clear();
+            setState(() { _query = ''; _searchResults = []; _selectedChapter = paraId; });
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        color: (meta?.color ?? _brand).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(meta?.icon ?? Icons.article, size: 16, color: meta?.color ?? _brand),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        meta?.title ?? 'فصل $paraId',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: meta?.color ?? _brand),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _highlightedText(contextText, _query),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _highlightedText(String text, String query) {
+    if (query.isEmpty) return Text(text, style: const TextStyle(fontSize: 13, height: 1.7), maxLines: 4, overflow: TextOverflow.ellipsis);
+
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    int start = 0;
+
+    while (true) {
+      final idx = lowerText.indexOf(lowerQuery, start);
+      if (idx == -1) {
+        spans.add(TextSpan(text: text.substring(start)));
+        break;
+      }
+      if (idx > start) spans.add(TextSpan(text: text.substring(start, idx)));
+      spans.add(TextSpan(
+        text: text.substring(idx, idx + query.length),
+        style: const TextStyle(backgroundColor: Color(0xFFFDE68A), fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+      ));
+      start = idx + query.length;
+    }
+
+    return RichText(
+      textDirection: TextDirection.rtl,
+      maxLines: 4,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(style: const TextStyle(fontSize: 13, height: 1.7, color: Color(0xFF1A2138)), children: spans),
+    );
+  }
+}
+
+// ══════════ Models ══════════
+
+class _Chapter {
+  final int id;
+  final String title;
+  final IconData icon;
+  final Color color;
+  final int sentenceCount;
+  const _Chapter({required this.id, required this.title, required this.icon, required this.color, required this.sentenceCount});
+}
+
+class _ChMeta {
+  final String title;
+  final IconData icon;
+  final Color color;
+  const _ChMeta(this.title, this.icon, this.color);
 }

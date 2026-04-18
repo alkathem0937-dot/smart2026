@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:hijri/hijri_calendar.dart';
@@ -382,7 +386,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFAF6F1),
+      backgroundColor: const Color(0xFFF7F8FA),
       appBar: _buildAppBar(),
       body: SafeArea(
         child: Column(
@@ -408,7 +412,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xFFFAF6F1),
+      backgroundColor: const Color(0xFFF7F8FA),
       elevation: 0,
       automaticallyImplyLeading: false,
       title: const Text(
@@ -488,7 +492,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: _isHijriCalendar ? const Color(0xFFE8A54B) : Colors.grey[200],
+                    color: _isHijriCalendar ? const Color(0xFFD4A940) : Colors.grey[200],
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -556,9 +560,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildWeekDaysHeader() {
-    // أسماء الأيام بالعربية (السبت = 0, الأحد = 1, ..., الجمعة = 6)
-    // عرض من اليمين إلى اليسار: جمعة، خميس، أربعاء، ثلاثاء، إثنين، أحد، سبت
-    final weekDays = ['جمعة', 'خميس', 'أربعاء', 'ثلاثاء', 'إثنين', 'أحد', 'سبت'];
+    final weekDays = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -570,8 +572,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.grey[500],
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
             ),
           ),
         )).toList(),
@@ -591,12 +593,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final firstDayOfMonth = DateTime(_focusedDay.year, _focusedDay.month, 1);
     final lastDayOfMonth = DateTime(_focusedDay.year, _focusedDay.month + 1, 0);
     
-    // Convert weekday to 0-6 where 0 = Friday, 1 = Thursday, ..., 6 = Saturday
-    // In Dart: weekday 1=Monday, 2=Tuesday, ..., 6=Saturday, 7=Sunday
-    // الترتيب المعروض من اليمين إلى اليسار: ['جمعة', 'خميس', 'أربعاء', 'ثلاثاء', 'إثنين', 'أحد', 'سبت']
-    // هذا يعني: 0=جمعة, 1=خميس, 2=أربعاء, 3=ثلاثاء, 4=إثنين, 5=أحد, 6=سبت
-    // الصيغة: (5 - weekday + 7) % 7
-    final firstWeekday = (5 - firstDayOfMonth.weekday + 7) % 7;
+    // الترتيب من اليمين لليسار: السبت، الأحد، ..., الجمعة
+    // في دارت: 1=الاثنين، ..., 6=السبت، 7=الأحد
+    // نريد: السبت=0، الأحد=1، الاثنين=2، الثلاثاء=3، الأربعاء=4، الخميس=5، الجمعة=6
+    final firstWeekday = (firstDayOfMonth.weekday % 7 + 1) % 7;
     
     final daysInMonth = lastDayOfMonth.day;
     
@@ -614,9 +614,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     for (int row = 0; row < numberOfRows; row++) {
       List<Widget> currentRow = [];
       
-      // بناء الصف بشكل معكوس (من اليمين إلى اليسار)
-      for (int col = 6; col >= 0; col--) {
-        final cellIndex = row * 7 + (6 - col); // حساب الفهرس الصحيح
+      // بناء الصف
+      for (int col = 0; col < 7; col++) {
+        final cellIndex = row * 7 + col;
         final dayNumber = cellIndex - firstWeekday + 1;
         final isCurrentMonth = dayNumber > 0 && dayNumber <= daysInMonth;
         final date = isCurrentMonth 
@@ -648,10 +648,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // الحصول على اليوم الأول من الشهر الهجري
     final firstDayDate = _hijriToGregorian(hijri.hYear, hijri.hMonth, 1);
     
-    // Convert weekday to 0-6 where 0 = Friday, 1 = Thursday, ..., 6 = Saturday
-    // الترتيب المعروض: ['جمعة', 'خميس', 'أربعاء', 'ثلاثاء', 'إثنين', 'أحد', 'سبت']
-    // الصيغة: (5 - weekday + 7) % 7
-    final firstWeekday = (5 - firstDayDate.weekday + 7) % 7;
+    // الترتيب من اليمين لليسار: السبت، الأحد، ..., الجمعة
+    final firstWeekday = (firstDayDate.weekday % 7 + 1) % 7;
     
     // Calculate number of rows needed
     final totalCells = firstWeekday + daysInMonth;
@@ -663,9 +661,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     for (int row = 0; row < numberOfRows; row++) {
       List<Widget> currentRow = [];
       
-      // بناء الصف بشكل معكوس (من اليمين إلى اليسار)
-      for (int col = 6; col >= 0; col--) {
-        final cellIndex = row * 7 + (6 - col); // حساب الفهرس الصحيح
+      // بناء الصف
+      for (int col = 0; col < 7; col++) {
+        final cellIndex = row * 7 + col;
         final dayNumber = cellIndex - firstWeekday + 1;
         final isCurrentMonth = dayNumber > 0 && dayNumber <= daysInMonth;
         DateTime? date;
@@ -721,9 +719,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         margin: const EdgeInsets.symmetric(vertical: 1),
         decoration: BoxDecoration(
           color: isSelected 
-              ? const Color(0xFFE8A54B)
+              ? const Color(0xFFD4A940)
               : isToday 
-                  ? const Color(0xFFE8A54B).withOpacity(0.2)
+                  ? const Color(0xFFD4A940).withOpacity(0.2)
                   : Colors.transparent,
           shape: BoxShape.circle,
         ),
@@ -817,7 +815,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ),
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFE8A54B),
+            backgroundColor: const Color(0xFFD4A940),
             padding: const EdgeInsets.symmetric(vertical: 12),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(30),
@@ -831,7 +829,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildTasksList() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFFE8A54B)));
+      return const Center(child: CircularProgressIndicator(color: Color(0xFFD4A940)));
     }
     
     if (_selectedDayTasks.isEmpty) {
@@ -947,12 +945,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
           children: [
             if (task.type == TaskType.hearing && task.lawsuitId != null)
               IconButton(
-                icon: const Icon(Icons.folder_open, color: Color(0xFFE8A54B)),
+                icon: const Icon(Icons.folder_open, color: Color(0xFFD4A940)),
                 onPressed: () => _navigateToCase(task.lawsuitId!),
                 tooltip: 'عرض القضية',
               ),
             IconButton(
-              icon: const Icon(Icons.edit_outlined, color: Color(0xFFE8A54B)),
+              icon: const Icon(Icons.edit_outlined, color: Color(0xFFD4A940)),
               onPressed: () => _showEditTaskDialog(task),
               tooltip: 'تعديل المهمة',
             ),
@@ -1021,7 +1019,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   Text(
                     _getFormattedDate(date),
                     style: TextStyle(
-                      color: const Color(0xFFE8A54B),
+                      color: const Color(0xFFD4A940),
                       fontSize: 14,
                     ),
                   ),
@@ -1072,7 +1070,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFE8A54B), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFD4A940), width: 2),
                       ),
                     ),
                   ),
@@ -1089,7 +1087,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFE8A54B), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFD4A940), width: 2),
                       ),
                     ),
                   ),
@@ -1107,7 +1105,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFE8A54B), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFD4A940), width: 2),
                       ),
                     ),
                     onTap: () async {
@@ -1164,7 +1162,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         Navigator.pop(context);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE8A54B),
+                        backgroundColor: const Color(0xFFD4A940),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -1234,7 +1232,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تمت إضافة المهمة بنجاح'),
-          backgroundColor: Color(0xFFE8A54B),
+          backgroundColor: Color(0xFFD4A940),
         ),
       );
     }
@@ -1332,7 +1330,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   Text(
                     _getFormattedDate(task.date),
                     style: TextStyle(
-                      color: const Color(0xFFE8A54B),
+                      color: const Color(0xFFD4A940),
                       fontSize: 14,
                     ),
                   ),
@@ -1383,7 +1381,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFE8A54B), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFD4A940), width: 2),
                       ),
                     ),
                   ),
@@ -1400,7 +1398,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFE8A54B), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFD4A940), width: 2),
                       ),
                     ),
                   ),
@@ -1418,7 +1416,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFE8A54B), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFD4A940), width: 2),
                       ),
                     ),
                     onTap: () async {
@@ -1472,7 +1470,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         Navigator.pop(context);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE8A54B),
+                        backgroundColor: const Color(0xFFD4A940),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -1542,7 +1540,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('تم تحديث المهمة بنجاح'),
-        backgroundColor: Color(0xFFE8A54B),
+        backgroundColor: Color(0xFFD4A940),
       ),
     );
   }
@@ -1576,9 +1574,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 'task_reminders',
                 'تذكيرات المهام',
                 channelDescription: 'إشعارات تذكير بالمهام والجلسات',
-                importance: Importance.high,
+                importance: Importance.max,
                 priority: Priority.high,
                 showWhen: true,
+                playSound: true,
+                enableVibration: true,
+                fullScreenIntent: true,
                 icon: '@mipmap/ic_launcher',
               ),
               iOS: const DarwinNotificationDetails(),
@@ -1603,9 +1604,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     'task_reminders',
                     'تذكيرات المهام',
                     channelDescription: 'إشعارات تذكير بالمهام والجلسات',
-                    importance: Importance.high,
+                    importance: Importance.max,
                     priority: Priority.high,
                     showWhen: true,
+                    playSound: true,
+                    enableVibration: true,
+                    fullScreenIntent: true,
                     icon: '@mipmap/ic_launcher',
                   ),
                   iOS: const DarwinNotificationDetails(),
@@ -1809,7 +1813,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 SwitchListTile(
                   title: const Text('تفعيل التنبيهات'),
                   value: _enableNotifications,
-                  activeColor: const Color(0xFFE8A54B),
+                  activeColor: const Color(0xFFD4A940),
                   onChanged: (value) {
                     setModalState(() => _enableNotifications = value);
                     setState(() {});
@@ -2036,7 +2040,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required int? selectedLawsuitId,
     required ValueChanged<int?> onChanged,
   }) {
-    return FutureBuilder<Map<String, dynamic>>(
+    return FutureBuilder<dynamic>(
       future: _apiService.getLawsuits(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2061,10 +2065,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
           );
         }
 
-        // Support both paginated and direct results
+        // Support both list, paginated and direct results
         List lawsuits = [];
         final data = snapshot.data;
-        if (data != null) {
+        if (data is List) {
+          lawsuits = data;
+        } else if (data is Map) {
           if (data.containsKey('results')) {
             lawsuits = data['results'] as List? ?? [];
           } else if (data.containsKey('data')) {

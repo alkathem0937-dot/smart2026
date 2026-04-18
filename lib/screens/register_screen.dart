@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import 'dart:developer' as developer;
 
-/// Register Screen - انشاء حساب
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -48,7 +50,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isSubmitting = true);
 
-    final apiService = ApiService();
+    final apiService = Provider.of<ApiService>(context, listen: false);
     try {
       await apiService.register(
         username: _usernameController.text.trim(),
@@ -64,254 +66,196 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم إنشاء الحساب بنجاح. يرجى تسجيل الدخول'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
+        _showSuccessDialog();
       }
     } catch (e) {
-      developer.log('Error registering: $e', name: 'RegisterScreen');
-      if (mounted) {
-        // Extract error message
-        String errorMessage = 'خطأ في التسجيل';
-        final errorStr = e.toString();
-        IconData errorIcon = Icons.error_outline;
-        Color errorColor = Colors.red;
-        
-        // Check for specific error messages
-        if (errorStr.contains('اسم المستخدم موجود بالفعل') || 
-            errorStr.contains('username') && errorStr.contains('already exists')) {
-          errorMessage = 'اسم المستخدم موجود بالفعل\nيرجى اختيار اسم آخر';
-          errorIcon = Icons.person_off;
-        } else if (errorStr.contains('البريد الإلكتروني موجود بالفعل') || 
-                   errorStr.contains('email') && errorStr.contains('already exists')) {
-          errorMessage = 'البريد الإلكتروني موجود بالفعل\nيرجى استخدام بريد آخر';
-          errorIcon = Icons.email;
-        } else if (errorStr.contains('الرقم الوطني موجود بالفعل') ||
-                   errorStr.contains('national_id') && errorStr.contains('already exists')) {
-          errorMessage = 'الرقم الوطني موجود بالفعل\nيرجى التحقق من الرقم المدخل';
-          errorIcon = Icons.badge;
-        } else if (errorStr.contains('SocketException') || 
-                   errorStr.contains('Failed host lookup') ||
-                   errorStr.contains('Network is unreachable')) {
-          errorMessage = 'لا يوجد اتصال بالإنترنت\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
-          errorIcon = Icons.wifi_off;
-          errorColor = Colors.orange.shade700;
-        } else if (errorStr.contains('TimeoutException') || 
-                   errorStr.contains('timeout')) {
-          errorMessage = 'انتهت مهلة الاتصال\nيرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
-          errorIcon = Icons.wifi_off;
-          errorColor = Colors.orange.shade700;
-        } else if (errorStr.contains('Connection refused') ||
-                   errorStr.contains('Network error') || 
-                   errorStr.contains('Connection')) {
-          errorMessage = 'لا يمكن الاتصال بالخادم\nيرجى التحقق من اتصال الإنترنت والمحاولة لاحقاً';
-          errorIcon = Icons.wifi_off;
-          errorColor = Colors.orange.shade700;
-        } else if (errorStr.contains('400') || 
-                   errorStr.contains('Bad Request')) {
-          errorMessage = 'بيانات التسجيل غير صحيحة\nيرجى التحقق من جميع الحقول المدخلة';
-          errorIcon = Icons.warning_amber_rounded;
-        } else if (errorStr.contains('Request failed')) {
-          // Try to extract the actual error from the exception
-          final match = RegExp(r'Exception: (.+)').firstMatch(errorStr);
-          if (match != null) {
-            errorMessage = match.group(1) ?? 'خطأ في التسجيل';
-          } else {
-            errorMessage = 'خطأ في التسجيل\nيرجى التحقق من البيانات المدخلة';
-          }
-        } else {
-          errorMessage = errorStr.replaceAll('Exception: ', '');
-          if (errorMessage.length > 100) {
-            errorMessage = 'خطأ في التسجيل\nيرجى التحقق من البيانات المدخلة';
-          }
-        }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(errorIcon, color: Colors.white, size: 24),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    errorMessage,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: errorColor,
-            duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            action: SnackBarAction(
-              label: 'حسناً',
-              textColor: Colors.white,
-              onPressed: () {},
+      _showError(e.toString());
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Icon(Icons.check_circle_rounded, color: Colors.green, size: 64),
+        content: const Text(
+          'تم إنشاء الحساب بنجاح! يمكنك الآن تسجيل الدخول باستخدام بياناتك الجديدة.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          Center(
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pop(context);
+              },
+              child: const Text('دخول الآن', style: TextStyle(color: Colors.white)),
             ),
           ),
-        );
-      }
-    } finally {
-      setState(() => _isSubmitting = false);
-    }
+        ],
+      ),
+    );
+  }
+
+  void _showError(String error) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.red,
+        content: Text('خطأ: $error'),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.isDark;
     return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('إنشاء حساب'),
+        title: const Text('انضم إلى SmartJudi', style: TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextFormField(
-                controller: _fullNameController,
-                decoration: const InputDecoration(
-                  labelText: 'الاسم الكامل',
-                  prefixIcon: Icon(Icons.person),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'يرجى إدخال الاسم الكامل' : null,
+              const Text(
+                'ابدأ تجربتك القانونية الذكية اليوم عن طريق إنشاء حساب جديد',
+                style: TextStyle(fontSize: 14, color: Colors.grey),
+                textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 32),
+              
+              _buildSectionTitle('المعلومات الشخصية'),
+              const SizedBox(height: 12),
+              _buildTextField('الاسم الكامل (رباعي)', _fullNameController, Icons.person_outline_rounded),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _usernameController,
-                decoration: const InputDecoration(
-                  labelText: 'اسم المستخدم',
-                  prefixIcon: Icon(Icons.account_circle),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'يرجى إدخال اسم المستخدم' : null,
-              ),
+              _buildTextField('رقم الهاتف', _phoneController, Icons.phone_android_rounded, keyboard: TextInputType.phone),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'البريد الإلكتروني',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value?.isEmpty ?? true) {
-                    return 'يرجى إدخال البريد الإلكتروني';
-                  }
-                  if (!value!.contains('@')) {
-                    return 'البريد الإلكتروني غير صحيح';
-                  }
-                  return null;
-                },
-              ),
+              _buildTextField('الرقم الوطني / الهوية', _nationalIdController, Icons.badge_outlined),
+              
+              const SizedBox(height: 32),
+              _buildSectionTitle('معلومات الحساب'),
+              const SizedBox(height: 12),
+              _buildTextField('اسم المستخدم (بالإنجليزي)', _usernameController, Icons.alternate_email_rounded),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _phoneController,
-                decoration: const InputDecoration(
-                  labelText: 'رقم الهاتف',
-                  prefixIcon: Icon(Icons.phone),
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.phone,
-              ),
+              _buildTextField('البريد الإلكتروني', _emailController, Icons.email_outlined, keyboard: TextInputType.emailAddress),
+              
+              const SizedBox(height: 32),
+              _buildSectionTitle('نوع الحساب'),
+              const SizedBox(height: 12),
+              _buildRoleSelector(),
+              
+              const SizedBox(height: 32),
+              _buildSectionTitle('الأمان'),
+              const SizedBox(height: 12),
+              _buildPasswordField('كلمة المرور', _passwordController, _obscurePassword, () => setState(() => _obscurePassword = !_obscurePassword)),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _nationalIdController,
-                decoration: const InputDecoration(
-                  labelText: 'الرقم الوطني',
-                  prefixIcon: Icon(Icons.badge),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: _selectedRole,
-                decoration: const InputDecoration(
-                  labelText: 'الدور',
-                  prefixIcon: Icon(Icons.work),
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'citizen', child: Text('مواطن')),
-                  DropdownMenuItem(value: 'lawyer', child: Text('محامي')),
-                  DropdownMenuItem(value: 'judge', child: Text('قاضي')),
-                  DropdownMenuItem(value: 'notary', child: Text('كاتب عدل')),
-                ],
-                onChanged: (value) => setState(() => _selectedRole = value!),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  labelText: 'كلمة المرور',
-                  prefixIcon: const Icon(Icons.lock),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+              _buildPasswordField('تأكيد كلمة المرور', _confirmPasswordController, _obscureConfirmPassword, () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword)),
+              
+              const SizedBox(height: 48),
+              SizedBox(
+                height: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  border: const OutlineInputBorder(),
+                  onPressed: _isSubmitting ? null : _register,
+                  child: _isSubmitting
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text('إنشاء الحساب الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                 ),
-                validator: (value) {
-                  if (value?.isEmpty ?? true) {
-                    return 'يرجى إدخال كلمة المرور';
-                  }
-                  if (value!.length < 6) {
-                    return 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _confirmPasswordController,
-                obscureText: _obscureConfirmPassword,
-                decoration: InputDecoration(
-                  labelText: 'تأكيد كلمة المرور',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureConfirmPassword
-                          ? Icons.visibility
-                          : Icons.visibility_off,
-                    ),
-                    onPressed: () => setState(
-                        () => _obscureConfirmPassword = !_obscureConfirmPassword),
-                  ),
-                  border: const OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    value?.isEmpty ?? true ? 'يرجى تأكيد كلمة المرور' : null,
               ),
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isSubmitting ? null : _register,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: _isSubmitting
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('إنشاء حساب'),
-              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: AppColors.primary),
+    );
+  }
+
+  Widget _buildTextField(String label, TextEditingController controller, IconData icon, {TextInputType? keyboard}) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboard,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, size: 20, color: AppColors.primary),
+        filled: true,
+        fillColor: context.isDark ? const Color(0xFF1E293B) : Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      ),
+      validator: (v) => v!.isEmpty ? 'هذا الحقل مطلوب' : null,
+    );
+  }
+
+  Widget _buildPasswordField(String label, TextEditingController controller, bool obscure, VoidCallback toggle) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscure,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(Icons.lock_outline_rounded, size: 20, color: AppColors.primary),
+        suffixIcon: IconButton(icon: Icon(obscure ? Icons.visibility : Icons.visibility_off, size: 20), onPressed: toggle),
+        filled: true,
+        fillColor: context.isDark ? const Color(0xFF1E293B) : Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      ),
+      validator: (v) => v!.length < 6 ? 'كلمة المرور قصيرة جداً' : null,
+    );
+  }
+
+  Widget _buildRoleSelector() {
+    return Row(
+      children: [
+        _roleButton('citizen', 'مواطن', Icons.person_rounded),
+        const SizedBox(width: 8),
+        _roleButton('lawyer', 'محامي', Icons.gavel_rounded),
+        const SizedBox(width: 8),
+        _roleButton('notary', 'موثق', Icons.assignment_rounded),
+      ],
+    );
+  }
+
+  Widget _roleButton(String role, String label, IconData icon) {
+    final isSelected = _selectedRole == role;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedRole = role),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary : (context.isDark ? const Color(0xFF1E293B) : Colors.white),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSelected ? AppColors.primary : Colors.grey.withOpacity(0.2)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: isSelected ? Colors.white : Colors.grey, size: 20),
+              const SizedBox(height: 4),
+              Text(label, style: TextStyle(color: isSelected ? Colors.white : Colors.grey, fontSize: 11, fontWeight: FontWeight.bold)),
             ],
           ),
         ),
@@ -319,4 +263,3 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 }
-

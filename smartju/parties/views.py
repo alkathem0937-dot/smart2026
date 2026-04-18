@@ -1,6 +1,7 @@
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Q
 from .models import Plaintiff, Defendant
 from .serializers import PlaintiffSerializer, DefendantSerializer
 from accounts.permissions import IsJudgeOrLawyerOrAdmin
@@ -10,7 +11,6 @@ class PlaintiffViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Plaintiff
     """
-    queryset = Plaintiff.objects.select_related('lawsuit').all()
     serializer_class = PlaintiffSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -18,6 +18,18 @@ class PlaintiffViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'phone', 'attorney_name']
     ordering_fields = ['created_at', 'name']
     ordering = ['-created_at']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Plaintiff.objects.select_related('lawsuit').all()
+        if user.is_superuser:
+            return qs
+        if hasattr(user, 'profile') and user.profile.role == 'admin':
+            return qs
+        return qs.filter(
+            Q(lawsuit__created_by=user) |
+            Q(lawsuit__client=user)
+        )
     
     def get_permissions(self):
         # Allow all authenticated users to create parties for their own lawsuits
@@ -44,7 +56,6 @@ class DefendantViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Defendant
     """
-    queryset = Defendant.objects.select_related('lawsuit').all()
     serializer_class = DefendantSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -52,6 +63,18 @@ class DefendantViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'phone', 'attorney_name']
     ordering_fields = ['created_at', 'name']
     ordering = ['-created_at']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = Defendant.objects.select_related('lawsuit').all()
+        if user.is_superuser:
+            return qs
+        if hasattr(user, 'profile') and user.profile.role == 'admin':
+            return qs
+        return qs.filter(
+            Q(lawsuit__created_by=user) |
+            Q(lawsuit__client=user)
+        )
     
     def get_permissions(self):
         # Allow all authenticated users to create parties for their own lawsuits

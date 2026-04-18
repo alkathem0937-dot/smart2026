@@ -14,11 +14,13 @@ class UserProfile(models.Model):
     ROLE_LAWYER = 'lawyer'
     ROLE_NOTARY = 'notary'
     ROLE_CITIZEN = 'citizen'
+    ROLE_ASSISTANT = 'assistant'
     ROLE_ADMIN = 'admin'
     
     ROLE_CHOICES = [
         (ROLE_JUDGE, 'قاضي'),
         (ROLE_LAWYER, 'محامي'),
+        (ROLE_ASSISTANT, 'معاون محامي'),
         (ROLE_NOTARY, 'كاتب عدل'),
         (ROLE_CITIZEN, 'مواطن'),
         (ROLE_ADMIN, 'مدير'),
@@ -54,6 +56,15 @@ class UserProfile(models.Model):
         null=True,
         unique=True,
         verbose_name='الرقم الوطني'
+    )
+    
+    supervisor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supervised_accounts',
+        verbose_name='المسؤول (المحامي)'
     )
     
     created_at = models.DateTimeField(
@@ -140,7 +151,15 @@ def create_user_profile(sender, instance, created, **kwargs):
     Signal receiver to automatically create UserProfile when User is created
     """
     if created:
+        # Default role is citizen, but superuser gets admin role
+        role = UserProfile.ROLE_ADMIN if instance.is_superuser else UserProfile.ROLE_CITIZEN
         UserProfile.objects.get_or_create(
             user=instance,
-            defaults={'role': UserProfile.ROLE_CITIZEN}
+            defaults={'role': role}
         )
+    elif instance.is_superuser:
+        # Optional: ensure existing superusers have admin role
+        profile, _ = UserProfile.objects.get_or_create(user=instance)
+        if profile.role != UserProfile.ROLE_ADMIN:
+            profile.role = UserProfile.ROLE_ADMIN
+            profile.save()

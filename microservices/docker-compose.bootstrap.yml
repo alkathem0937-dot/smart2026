@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  gateway:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./gateway/nginx.bootstrap.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      legal:
+        condition: service_healthy
+    networks: [smartjudi-net]
+    restart: unless-stopped
+
+  db-legal:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: smartjudi_legal
+      POSTGRES_USER: smartjudi
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-smartjudi_secret}
+    volumes:
+      - pgdata-legal:/var/lib/postgresql/data
+    networks: [smartjudi-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartjudi -d smartjudi_legal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  legal:
+    build:
+      context: .
+      dockerfile: services/legal/Dockerfile
+    environment:
+      DATABASE_URL: postgres://smartjudi:${DB_PASSWORD:-smartjudi_secret}@db-legal:5432/smartjudi_legal
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      MONOLITH_PATH: /monolith
+      DJANGO_SETTINGS_MODULE: legal_service.settings
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal}
+    volumes:
+      - ../smartju:/monolith:ro
+    depends_on:
+      db-legal:
+        condition: service_healthy
+    networks: [smartjudi-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  pgdata-legal:
+
+networks:
+  smartjudi-net:
+    driver: bridge

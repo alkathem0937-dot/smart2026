@@ -6,3 +6,6 @@ class PaymentsConfig(AppConfig):
     name = 'payments'
     verbose_name = 'المدفوعات'
 
+    def ready(self):
+        import payments.signals
+

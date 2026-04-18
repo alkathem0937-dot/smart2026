@@ -7,9 +7,11 @@ class ChatProvider with ChangeNotifier {
   final AIApiService _apiService = AIApiService();
   List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
+  List<String> _latestSuggestions = [];
 
   List<Map<String, dynamic>> get messages => _messages;
   bool get isLoading => _isLoading;
+  List<String> get latestSuggestions => _latestSuggestions;
 
   ChatProvider() {
     // Initial system message or welcome message
@@ -42,11 +44,11 @@ class ChatProvider with ChangeNotifier {
       final aiResponse = response['ai_response'] ?? response['response'] ?? 'عذرًا، لم أتمكن من الحصول على استجابة.';
       _messages.add({'role': 'assistant', 'content': aiResponse});
       
-      // Update conversation history from the response if available
-      // تحديث سجل المحادثة من الاستجابة (إذا كان الواجهة الخلفية ترسل سجل محدث)
-      if (response.containsKey('conversation_history')) {
-        // Optionally update messages from backend if needed
-        // _messages = response['conversation_history'].cast<Map<String, dynamic>>();
+      // حفظ الاقتراحات الجديدة
+      if (response.containsKey('suggested_questions')) {
+        _latestSuggestions = List<String>.from(response['suggested_questions']);
+      } else {
+        _latestSuggestions = [];
       }
 
     } catch (e) {

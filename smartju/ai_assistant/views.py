@@ -4,7 +4,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
 # Import from old services.py for backward compatibility
 try:
     from . import services as old_services_module
@@ -62,66 +63,88 @@ class AIChatView(APIView):
         operation_description="إرسال استفسار للمساعد القانوني الذكي والحصول على استجابة"
     )
     def post(self, request, *args, **kwargs):
-        if self.ai_assistant_service is None:
-            return Response(
-                {"detail": "خدمة المساعد الذكي غير متاحة حالياً. يرجى التحقق من إعدادات الخادم."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
-
         serializer = ChatRequestSerializer(data=request.data)
-        if serializer.is_valid():
-            # Support both user_query (new) and query (legacy)
-            user_query = serializer.validated_data.get('user_query') or serializer.validated_data.get('query')
-            conversation_history = serializer.validated_data.get('conversation_history', [])
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            logger.info(f"Received chat query: {user_query}")
-            # Debug: Log API key status (without showing the actual key)
-            groq_key = os.getenv("GROQ_API_KEY")
-            logger.info(f"GROQ_API_KEY present: {bool(groq_key)}")
-            logger.info(f"GROQ_API_KEY length: {len(groq_key) if groq_key else 0}")
+        user_query = serializer.validated_data.get('user_query') or serializer.validated_data.get('query')
+        conversation_history = serializer.validated_data.get('conversation_history', [])
+
+        if self.ai_assistant_service is None:
+            offline_msg = (
+                "المساعد الذكي غير مُفعّل على هذا الخادم. للتشغيل المحلي: عيّن المتغير "
+                "GROQ_API_KEY في البيئة، أو شغّل Ollama واضبط عنوانه في إعدادات المشروع."
+            )
+            response_data = {
+                "ai_response": offline_msg,
+                "conversation_history": conversation_history
+                + [
+                    {"role": "user", "content": user_query},
+                    {"role": "assistant", "content": offline_msg},
+                ],
+                "source_documents": [],
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        logger.info(f"Received chat query: {user_query}")
+        # Debug: Log API key status (without showing the actual key)
+        groq_key = os.getenv("GROQ_API_KEY")
+        logger.info(f"GROQ_API_KEY present: {bool(groq_key)}")
+        logger.info(f"GROQ_API_KEY length: {len(groq_key) if groq_key else 0}")
+        try:
+            # Try new service first, fallback to old service
             try:
-                # Try new service first, fallback to old service
-                try:
-                    new_service = AIAssistantService()
-                    ai_response_content = new_service.get_ai_response(user_query, conversation_history)
+                new_service = AIAssistantService()
+                ai_response_content = new_service.get_ai_response(user_query, conversation_history)
+                
+                # استخراج الاقتراحات من النص إذا وجدت
+                suggested_questions = []
+                clean_response = ai_response_content
+                if "SUGGESTED_QUESTIONS:" in ai_response_content:
+                    parts = ai_response_content.split("SUGGESTED_QUESTIONS:")
+                    clean_response = parts[0].strip()
+                    if len(parts) > 1:
+                        suggestions_part = parts[1].strip()
+                        suggested_questions = [q.strip() for q in suggestions_part.split("||") if q.strip()]
+
+                response_data = {
+                    "ai_response": clean_response,
+                    "suggested_questions": suggested_questions,
+                    "conversation_history": conversation_history + [
+                        {"role": "user", "content": user_query},
+                        {"role": "assistant", "content": clean_response}
+                    ]
+                }
+            except Exception as e:
+                logger.warning(f"New service failed, using legacy service: {e}")
+                # Fallback to legacy service
+                response_data = self.ai_assistant_service.get_ai_response(
+                    user_query, conversation_history
+                )
+                # Convert legacy format to new format
+                if isinstance(response_data, dict) and "response" in response_data:
                     response_data = {
-                        "ai_response": ai_response_content,
+                        "ai_response": response_data["response"],
                         "conversation_history": conversation_history + [
                             {"role": "user", "content": user_query},
-                            {"role": "assistant", "content": ai_response_content}
-                        ]
+                            {"role": "assistant", "content": response_data["response"]}
+                        ],
+                        "source_documents": response_data.get("source_documents", [])
                     }
-                except Exception as e:
-                    logger.warning(f"New service failed, using legacy service: {e}")
-                    # Fallback to legacy service
-                    response_data = self.ai_assistant_service.get_ai_response(
-                        user_query, conversation_history
-                    )
-                    # Convert legacy format to new format
-                    if isinstance(response_data, dict) and "response" in response_data:
-                        response_data = {
-                            "ai_response": response_data["response"],
-                            "conversation_history": conversation_history + [
-                                {"role": "user", "content": user_query},
-                                {"role": "assistant", "content": response_data["response"]}
-                            ],
-                            "source_documents": response_data.get("source_documents", [])
-                        }
-                
-                response_serializer = ChatResponseSerializer(data=response_data)
-                response_serializer.is_valid(raise_exception=True)
-                return Response(response_serializer.data, status=status.HTTP_200_OK)
-            except Exception as e:
-                logger.exception(f"Error in AI chat view: {e}")
-                # Provide more user-friendly error messages
-                error_message = str(e)
-                if "GROQ_API_KEY" in error_message or "API key" in error_message.lower() or "credentials" in error_message.lower() or "دخول" in error_message:
-                    error_message = "عذراً، يرجى التحقق من إعدادات API Key. تأكد من إضافة GROQ_API_KEY أو HUGGINGFACE_API_KEY إلى ملف .env"
-                return Response(
-                    {"detail": error_message},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            response_serializer = ChatResponseSerializer(data=response_data)
+            response_serializer.is_valid(raise_exception=True)
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.exception(f"Error in AI chat view: {e}")
+            # Provide more user-friendly error messages
+            error_message = str(e)
+            if "GROQ_API_KEY" in error_message or "API key" in error_message.lower() or "credentials" in error_message.lower() or "دخول" in error_message:
+                error_message = "عذراً، يرجى التحقق من إعدادات API Key. تأكد من إضافة GROQ_API_KEY أو HUGGINGFACE_API_KEY إلى ملف .env"
+            return Response(
+                {"detail": error_message},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class AddLegalDocumentsView(APIView):
@@ -231,3 +254,32 @@ class DeleteLegalDocumentsView(APIView):
                 {"detail": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def analyze_case_view(request):
+    """
+    Endpoint for AI Strategic Case Analysis.
+    نقطة اتصال للتحليل الاستراتيجي للقضية بالذكاء الاصطناعي.
+    """
+    case_data = {
+        'subject': request.data.get('subject', ''),
+        'facts': request.data.get('facts', ''),
+        'opponent_claims': request.data.get('opponent_claims', ''),
+        'client_position': request.data.get('client_position', ''),
+    }
+    
+    if not case_data['facts'] or not case_data['opponent_claims']:
+        return Response(
+            {'error': 'يجب توفير وقائع القضية وادعاءات الخصم للتحليل'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        from .services.llm_service import LLMService
+        llm = LLMService()
+        analysis = llm.analyze_case_strategy(case_data)
+        return Response({'analysis': analysis})
+    except Exception as e:
+        logger.error(f"Error in analyze_case_view: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

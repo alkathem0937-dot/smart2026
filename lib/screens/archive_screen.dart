@@ -1,10 +1,20 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/lawsuit_provider.dart';
 import '../models/lawsuit_model.dart';
-import 'lawsuit_detail_screen.dart';
+import '../models/case_model.dart';
+import '../services/api_service.dart';
+import '../services/local_lookup_service.dart';
+import 'inquiries_screen.dart';
+import 'settings_screen.dart';
+import 'case_archive_details_screen.dart';
+import 'case_detail_screen.dart';
 
 /// Archive Screen - شاشة الأرشيف المركزية الشاملة
 class ArchiveScreen extends StatefulWidget {
@@ -19,6 +29,51 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
   final _scrollController = ScrollController();
   late TabController _tabController;
   bool _isGridView = false;
+
+  int? _extractHijriYear(String? hijriDate) {
+    if (hijriDate == null || hijriDate.trim().isEmpty) return null;
+    final parts = hijriDate.split('/');
+    if (parts.isEmpty) return null;
+    return int.tryParse(parts[0].trim());
+  }
+
+  List _extractListFromApiResponse(dynamic response) {
+    if (response == null) return const [];
+    if (response is List) return response;
+    if (response is Map) {
+      final dynamic directResults = response['results'] ?? response['data'] ?? response['items'];
+      if (directResults is List) return directResults;
+      if (directResults is Map) {
+        final dynamic nestedResults = directResults['results'] ?? directResults['data'] ?? directResults['items'];
+        if (nestedResults is List) return nestedResults;
+      }
+    }
+    return const [];
+  }
+
+  List<String> _getCaseSubtypes(String caseType) {
+    switch (caseType) {
+      case 'civil':
+      case 'مدنية':
+        return ['ضريبية', 'جمركية', 'زكوية', 'مدنية', 'مستعجل'];
+      case 'criminal':
+      case 'جزائية':
+        return ['تعرض للانحراف', 'جسيمة', 'غير جسيمة', 'مستعجلة'];
+      case 'personal_status':
+      case 'شخصية':
+        return ['شخصية', 'مستعجل'];
+      case 'administrative':
+      case 'إدارية':
+        return ['إدارية', 'مستعجل', 'عمالية'];
+      case 'commercial':
+      case 'تجارية':
+        return ['تجارية', 'مستعجل'];
+      case 'تنفيذ':
+        return ['إدارية', 'أوامر', 'مستعجل', 'تجارية', 'شخصية', 'عمالية', 'جنائية', 'مدنية'];
+      default:
+        return const [];
+    }
+  }
 
   // Filter selections
   String? _selectedCaseType;
@@ -71,6 +126,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<LawsuitProvider>(context, listen: false);
       provider.loadLawsuits(refresh: true);
+      provider.loadCases(refresh: true);
       provider.loadArchiveStats();
     });
     _scrollController.addListener(_onScroll);
@@ -192,22 +248,18 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
           ],
         ),
       ),
-      floatingActionButton: isKeyboardVisible ? null : FloatingActionButton(
-        backgroundColor: const Color(0xFFE91E63),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const LawsuitDetailScreen()),
-          ).then((_) {
-            Provider.of<LawsuitProvider>(context, listen: false).loadLawsuits(refresh: true);
-          });
-        },
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: isKeyboardVisible ? null : FloatingActionButton.extended(
+        heroTag: 'add_new_case',
+        backgroundColor: const Color(0xFFD4A940),
+        onPressed: _showNewCaseForm,
+        icon: const Icon(Icons.create_new_folder_rounded, color: Colors.white),
+        label: const Text('إنشاء ملف قضية', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
   Widget _buildHeader({bool isKeyboardVisible = false}) {
+    final provider = Provider.of<LawsuitProvider>(context, listen: false);
     return Container(
       padding: EdgeInsets.fromLTRB(6, isKeyboardVisible ? 1 : 1, 1, isKeyboardVisible ? 1 : 1),
       decoration: BoxDecoration(
@@ -242,7 +294,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                         IconButton(
                           icon: Icon(
                             Icons.filter_list,
-                            color: provider.hasActiveFilters ? const Color(0xFFE91E63) : Colors.grey[600],
+                            color: provider.hasActiveFilters ? const Color(0xFFD4A940) : Colors.grey[600],
                           ),
                           onPressed: _showFilterSheet,
                           tooltip: 'فلترة',
@@ -253,7 +305,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                             child: Container(
                               width: 8, height: 8,
                               decoration: const BoxDecoration(
-                                color: Color(0xFFE91E63),
+                                color: Color(0xFFD4A940),
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -262,19 +314,31 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                     );
                   },
                 ),
+                // Purge button (Delete All)
+                IconButton(
+                  icon: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent),
+                  onPressed: () => _confirmResetDatabase(provider),
+                  tooltip: 'مسح الأرشيف بالكامل',
+                ),
+                // Refresh button
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Color(0xFFD4A940)),
+                  onPressed: () => provider.loadLawsuits(refresh: true),
+                  tooltip: 'تحديث',
+                ),
                 Expanded(
                   child: Text(
                     'أرشيف القضايا',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A),
+                      color: Color(0xFF1A2138),
                     ),
                     textAlign: TextAlign.right,
                   ),
                 ),
                 const SizedBox(width: 7),
-                const Icon(Icons.archive_outlined, color: Color(0xFFE91E63), size: 28),
+                const Icon(Icons.archive_outlined, color: Color(0xFFD4A940), size: 28),
               ],
             ),
           if (!isKeyboardVisible) const SizedBox(height: 3),
@@ -301,7 +365,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                         IconButton(
                           icon: Icon(
                             Icons.filter_list,
-                            color: provider.hasActiveFilters ? const Color(0xFFE91E63) : Colors.grey[400],
+                            color: provider.hasActiveFilters ? const Color(0xFFD4A940) : Colors.grey[400],
                             size: 14,
                           ),
                           onPressed: _showFilterSheet,
@@ -315,7 +379,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                             child: Container(
                               width: 5, height: 5,
                               decoration: const BoxDecoration(
-                                color: Color(0xFFE91E63),
+                                color: Color(0xFFD4A940),
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -334,7 +398,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                     hintText: 'ابحث برقم الدعوى، الموضوع، الأطراف...',
                     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
                     prefixIcon: IconButton(
-                      icon: const Icon(Icons.search, color: Color(0xFFE91E63)),
+                      icon: const Icon(Icons.search, color: Color(0xFFD4A940)),
                       onPressed: _applySearch,
                     ),
                     suffixIcon: _searchController.text.isNotEmpty
@@ -381,13 +445,13 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
           child: IntrinsicHeight(
             child: Row(
               children: [
-                _buildStatChip('الكل', total, const Color(0xFF1A1A1A)),
+                _buildStatChip('الكل', total, const Color(0xFF1A2138)),
                 const SizedBox(width: 6),
                 _buildStatChip('نشط', active, Colors.green),
                 const SizedBox(width: 6),
                 _buildStatChip('محفوظ', archived, Colors.grey),
                 const SizedBox(width: 6),
-                _buildStatChip('النتائج', provider.totalCount, const Color(0xFFE91E63)),
+                _buildStatChip('النتائج', provider.totalCount, const Color(0xFFD4A940)),
               ],
             ),
           ),
@@ -442,8 +506,8 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
       color: Colors.white,
       child: TabBar(
         controller: _tabController,
-        indicatorColor: const Color(0xFFE91E63),
-        labelColor: const Color(0xFFE91E63),
+        indicatorColor: const Color(0xFFD4A940),
+        labelColor: const Color(0xFFD4A940),
         unselectedLabelColor: Colors.grey,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
         tabs: const [
@@ -518,9 +582,9 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
       label: Text(label, style: const TextStyle(fontSize: 11)),
       deleteIcon: const Icon(Icons.close, size: 16),
       onDeleted: onDelete,
-      backgroundColor: const Color(0xFFE91E63).withOpacity(0.08),
-      deleteIconColor: const Color(0xFFE91E63),
-      side: BorderSide(color: const Color(0xFFE91E63).withOpacity(0.3)),
+      backgroundColor: const Color(0xFFD4A940).withOpacity(0.08),
+      deleteIconColor: const Color(0xFFD4A940),
+      side: BorderSide(color: const Color(0xFFD4A940).withOpacity(0.3)),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
@@ -529,7 +593,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
     return Consumer<LawsuitProvider>(
       builder: (context, provider, child) {
         if (provider.isLoading && provider.lawsuits.isEmpty) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFFE91E63)));
+          return const Center(child: CircularProgressIndicator(color: Color(0xFFD4A940)));
         }
 
         if (provider.errorMessage != null && provider.lawsuits.isEmpty) {
@@ -550,7 +614,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
                   icon: const Icon(Icons.refresh),
                   label: const Text('إعادة المحاولة'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE91E63),
+                    backgroundColor: const Color(0xFFD4A940),
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -591,9 +655,10 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
         }
 
         return RefreshIndicator(
-          color: const Color(0xFFE91E63),
+          color: const Color(0xFFD4A940),
           onRefresh: () async {
             await provider.loadLawsuits(refresh: true);
+            await provider.loadCases(refresh: true);
             await provider.loadArchiveStats();
           },
           child: _isGridView ? _buildGridView(provider) : _buildListView(provider),
@@ -605,28 +670,56 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
   Widget _buildListView(LawsuitProvider provider) {
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     final isKeyboardVisible = keyboardHeight > 0;
-    
+    final cases = provider.cases;
+    final lawsuits = provider.lawsuits;
+    // Cases section count: header + items (or 0 if empty)
+    final caseSectionCount = cases.isEmpty ? 0 : cases.length + 1;
+    final totalCount = caseSectionCount + lawsuits.length + (provider.isLoading ? 1 : 0);
+
     return ListView.builder(
       controller: _scrollController,
-      padding: EdgeInsets.fromLTRB(
-        3, 
-        1, 
-        1, 
-        isKeyboardVisible ? 0 : 30,
-      ),
-      itemCount: provider.lawsuits.length + (provider.isLoading ? 1 : 0),
+      padding: EdgeInsets.fromLTRB(3, 1, 1, isKeyboardVisible ? 0 : 30),
+      itemCount: totalCount,
       itemBuilder: (context, index) {
-        if (index == provider.lawsuits.length) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(6),
-              child: CircularProgressIndicator(color: Color(0xFFE91E63)),
+        // Cases header
+        if (cases.isNotEmpty && index == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            child: Row(children: [
+              const Icon(Icons.folder_rounded, color: Color(0xFFD4A940), size: 20),
+              const SizedBox(width: 6),
+              Text('ملفات القضايا (${cases.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1B5E3B))),
+            ]),
+          );
+        }
+        // Cases items
+        if (cases.isNotEmpty && index > 0 && index <= cases.length) {
+          final c = cases[index - 1];
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 1,
+            child: ListTile(
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: const Color(0xFFD4A940).withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.folder_open_rounded, color: Color(0xFFD4A940), size: 22),
+              ),
+              title: Text(c.subject ?? 'بدون موضوع', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: Text('${c.caseNumber} • ${c.caseType ?? ''} • ${c.caseStatus ?? ''}', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+              trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CaseDetailScreen(caseId: c.id!))),
             ),
           );
         }
+        // Lawsuits
+        final lawsuitIndex = index - caseSectionCount;
+        if (lawsuitIndex >= lawsuits.length) {
+          return const Center(child: Padding(padding: EdgeInsets.all(6), child: CircularProgressIndicator(color: Color(0xFFD4A940))));
+        }
         return _ArchiveLawsuitCard(
-          lawsuit: provider.lawsuits[index],
-          onArchive: () => _showArchiveDialog(provider.lawsuits[index]),
+          lawsuit: lawsuits[lawsuitIndex],
+          onArchive: () => _showArchiveDialog(lawsuits[lawsuitIndex]),
         );
       },
     );
@@ -653,10 +746,541 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
       itemCount: provider.lawsuits.length + (provider.isLoading ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == provider.lawsuits.length) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFFE91E63)));
+          return const Center(child: CircularProgressIndicator(color: Color(0xFFD4A940)));
         }
         return _ArchiveGridCard(lawsuit: provider.lawsuits[index]);
       },
+    );
+  }
+
+  void _showNewCaseForm() {
+    final outerContext = context;
+    final navigator = Navigator.of(context);
+    final caseNumberController = TextEditingController();
+    final subjectController = TextEditingController();
+    int? selectedCaseYear;
+
+    String selectedCaseType = 'مدنية';
+    String? selectedCaseSubtype;
+    List<String> subtypeOptions = [];
+    String selectedCaseStatus = 'جديد';
+    DateTime? filingDateGregorian = DateTime.now();
+
+    // Governorate -> Courts (local-first)
+    List<Map<String, dynamic>> governorates = [];
+    List<Map<String, dynamic>> courts = [];
+    bool isLoadingGovernorates = false;
+    bool isLoadingCourts = false;
+    bool didInit = false;
+    String? selectedGovernorateName;
+    int? selectedGovernorateId;
+    int? selectedCourtId;
+
+    // Parties
+    List<Map<String, dynamic>> clientParties = [];
+    List<Map<String, dynamic>> opponentParties = [];
+
+    bool isCreating = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+
+          // ── Load governorates (local first, then API) ──
+          Future<void> loadGovernorates() async {
+            if (isLoadingGovernorates) return;
+            setSheetState(() => isLoadingGovernorates = true);
+            try {
+              // Try local cache first
+              var cached = await LocalLookupService.getGovernorates();
+              if (cached.isNotEmpty) {
+                setSheetState(() => governorates = cached);
+              }
+              // Sync from API in background
+              final apiService = Provider.of<ApiService>(ctx, listen: false);
+              final synced = await LocalLookupService.syncGovernorates(apiService);
+              if (synced.isNotEmpty) {
+                setSheetState(() => governorates = synced);
+              }
+            } catch (_) {}
+            finally { setSheetState(() => isLoadingGovernorates = false); }
+          }
+
+          Future<void> loadCourts({required int governorateId}) async {
+            if (isLoadingCourts) return;
+            setSheetState(() => isLoadingCourts = true);
+            try {
+              final gov = governorates.firstWhere(
+                (g) => g['id'] == governorateId,
+                orElse: () => <String, dynamic>{},
+              );
+              if (gov.isNotEmpty && gov['courts'] != null) {
+                final courtsData = gov['courts'] as List?;
+                setSheetState(() {
+                  courts = (courtsData ?? [])
+                      .map((e) => {'id': e['id'], 'name': e['name'] ?? e['court_name'] ?? ''})
+                      .toList().cast<Map<String, dynamic>>();
+                });
+              } else {
+                final apiService = Provider.of<ApiService>(ctx, listen: false);
+                final dynamic response = await apiService.getCourts(queryParams: {'governorate': governorateId.toString()});
+                final List results = _extractListFromApiResponse(response);
+                setSheetState(() {
+                  courts = results
+                      .map((e) => {'id': e['id'], 'name': e['court_name'] ?? e['name'] ?? ''})
+                      .toList().cast<Map<String, dynamic>>();
+                });
+              }
+            } catch (_) {}
+            finally { setSheetState(() => isLoadingCourts = false); }
+          }
+
+          Future<void> loadSubtypes(String caseType) async {
+            final subs = await LocalLookupService.getSubtypes(caseType);
+            setSheetState(() {
+              subtypeOptions = subs;
+              selectedCaseSubtype = null;
+            });
+          }
+
+          if (!didInit) {
+            didInit = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              loadGovernorates();
+              loadSubtypes(selectedCaseType);
+            });
+          }
+
+          // ── Helper for input decoration ──
+          InputDecoration _inputDeco(String label, IconData icon) => InputDecoration(
+            labelText: label,
+            prefixIcon: Icon(icon, color: const Color(0xFF1B5E3B), size: 20),
+            filled: true,
+            fillColor: const Color(0xFFF5F5F5),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          );
+
+          // ── Party add dialog ──
+          void addParty(String role) {
+            final nameCtrl = TextEditingController();
+            final phoneCtrl = TextEditingController();
+            final idCtrl = TextEditingController();
+            final idFromCtrl = TextEditingController();
+            final addressCtrl = TextEditingController();
+            String entityType = 'person';
+
+            showDialog(
+              context: ctx,
+              builder: (dCtx) => StatefulBuilder(
+                builder: (dCtx, setDState) => AlertDialog(
+                  title: Text(role == 'client' ? 'إضافة موكل (طرف أول)' : 'إضافة خصم (طرف ثاني)', textAlign: TextAlign.right),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Text('شخص'),
+                                selected: entityType == 'person',
+                                onSelected: (_) => setDState(() => entityType = 'person'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Text('مؤسسة'),
+                                selected: entityType == 'organization',
+                                onSelected: (_) => setDState(() => entityType = 'organization'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(controller: nameCtrl, textDirection: ui.TextDirection.rtl, decoration: _inputDeco('الاسم *', Icons.person)),
+                        const SizedBox(height: 10),
+                        if (role == 'client')
+                          TextField(controller: phoneCtrl, textDirection: ui.TextDirection.rtl, keyboardType: TextInputType.phone, decoration: _inputDeco('رقم الهاتف', Icons.phone)),
+                        if (role == 'client') const SizedBox(height: 10),
+                        TextField(controller: idCtrl, textDirection: ui.TextDirection.rtl, decoration: _inputDeco('رقم الهوية / السجل', Icons.badge)),
+                        const SizedBox(height: 10),
+                        TextField(controller: idFromCtrl, textDirection: ui.TextDirection.rtl, decoration: _inputDeco('جهة الإصدار', Icons.location_on)),
+                        const SizedBox(height: 10),
+                        TextField(controller: addressCtrl, textDirection: ui.TextDirection.rtl, decoration: _inputDeco('العنوان', Icons.home)),
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('إلغاء')),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (nameCtrl.text.trim().isEmpty) return;
+                        final p = {
+                          'name': nameCtrl.text.trim(),
+                          'phone': phoneCtrl.text.trim(),
+                          'id_number': idCtrl.text.trim(),
+                          'id_issued_from': idFromCtrl.text.trim(),
+                          'address': addressCtrl.text.trim(),
+                          'entity_type': entityType,
+                          'role': role,
+                        };
+                        setSheetState(() {
+                          if (role == 'client') { clientParties.add(p); }
+                          else { opponentParties.add(p); }
+                        });
+                        Navigator.pop(dCtx);
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B5E3B)),
+                      child: const Text('إضافة', style: TextStyle(color: Colors.white)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          Widget partyChip(Map<String, dynamic> p, String role, int idx) {
+            final isOrg = p['entity_type'] == 'organization';
+            return Chip(
+              avatar: Icon(isOrg ? Icons.business : Icons.person, size: 18),
+              label: Text(p['name'] ?? '', style: const TextStyle(fontSize: 12)),
+              deleteIcon: const Icon(Icons.close, size: 16),
+              onDeleted: () => setSheetState(() {
+                if (role == 'client') clientParties.removeAt(idx);
+                else opponentParties.removeAt(idx);
+              }),
+            );
+          }
+
+          return Container(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Handle bar ──
+                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 20),
+                // ── Title ──
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: const Color(0xFFD4A940).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.create_new_folder_rounded, color: Color(0xFFD4A940), size: 28),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('إنشاء ملف قضية جديد', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                      Text('أدخل بيانات القضية الأساسية', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    ],
+                  )),
+                ]),
+                const SizedBox(height: 24),
+
+                // ── رقم القضية + سنة القضية (بجانب بعض) ──
+                Row(children: [
+                  Expanded(flex: 3, child: TextField(
+                    controller: caseNumberController,
+                    textDirection: ui.TextDirection.rtl,
+                    keyboardType: TextInputType.number,
+                    decoration: _inputDeco('رقم القضية', Icons.numbers_rounded),
+                  )),
+                  const SizedBox(width: 10),
+                  Expanded(flex: 2, child: DropdownButtonFormField<int>(
+                    value: selectedCaseYear,
+                    decoration: _inputDeco('السنة', Icons.event_rounded),
+                    isExpanded: true,
+                    menuMaxHeight: 300,
+                    items: List.generate(1447 - 1400 + 1, (i) => 1447 - i)
+                        .map((y) => DropdownMenuItem(value: y, child: Text('$y', style: const TextStyle(fontSize: 14))))
+                        .toList(),
+                    onChanged: (v) => setSheetState(() => selectedCaseYear = v),
+                  )),
+                ]),
+                const SizedBox(height: 14),
+
+                // ── تاريخ الورود (ميلادي فقط) ──
+                TextFormField(
+                  readOnly: true,
+                  decoration: _inputDeco('تاريخ الورود', Icons.calendar_today_rounded),
+                  controller: TextEditingController(
+                    text: filingDateGregorian != null ? DateFormat('yyyy-MM-dd').format(filingDateGregorian!) : '',
+                  ),
+                  onTap: () async {
+                    final picked = await showDatePicker(context: ctx, initialDate: filingDateGregorian ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime.now().add(const Duration(days: 365)));
+                    if (picked != null) setSheetState(() => filingDateGregorian = picked);
+                  },
+                ),
+                const SizedBox(height: 14),
+
+                // ── نوع القضية ──
+                DropdownButtonFormField<String>(
+                  value: selectedCaseType,
+                  decoration: _inputDeco('نوع القضية', Icons.category_rounded),
+                  items: LocalLookupService.caseTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                  onChanged: (v) {
+                    setSheetState(() => selectedCaseType = v ?? 'مدنية');
+                    loadSubtypes(v ?? 'مدنية');
+                  },
+                ),
+                const SizedBox(height: 14),
+
+                // ── النوع الفرعي ──
+                if (subtypeOptions.isNotEmpty) ...[
+                  DropdownButtonFormField<String>(
+                    value: selectedCaseSubtype,
+                    decoration: _inputDeco('النوع الفرعي', Icons.list_alt_rounded),
+                    items: subtypeOptions.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                    onChanged: (v) => setSheetState(() => selectedCaseSubtype = v),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+
+                // ── المحافظة ──
+                if (isLoadingGovernorates)
+                  const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))))
+                else if (governorates.isEmpty)
+                  SizedBox(height: 48, child: OutlinedButton.icon(
+                    onPressed: loadGovernorates,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('تحميل المحافظات'),
+                    style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  ))
+                else
+                  DropdownButtonFormField<String>(
+                    value: selectedGovernorateName,
+                    decoration: _inputDeco('المحافظة', Icons.location_city_rounded),
+                    items: governorates.where((g) => (g['name'] as String?)?.isNotEmpty ?? false)
+                        .map((g) => DropdownMenuItem(value: g['name'] as String, child: Text(g['name'] as String))).toList(),
+                    onChanged: (v) async {
+                      setSheetState(() {
+                        selectedGovernorateName = v;
+                        final gov = governorates.firstWhere((g) => g['name'] == v, orElse: () => <String, dynamic>{});
+                        selectedGovernorateId = gov['id'] as int?;
+                        selectedCourtId = null;
+                        courts = [];
+                      });
+                      if (selectedGovernorateId != null) await loadCourts(governorateId: selectedGovernorateId!);
+                    },
+                  ),
+                const SizedBox(height: 14),
+
+                // ── المحكمة ──
+                isLoadingCourts
+                    ? const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))))
+                    : DropdownButtonFormField<int>(
+                        value: selectedCourtId,
+                        decoration: _inputDeco('المحكمة', Icons.gavel_rounded),
+                        items: courts.map((c) => DropdownMenuItem(value: c['id'] as int, child: Text(c['name'] as String))).toList(),
+                        onChanged: (v) => setSheetState(() => selectedCourtId = v),
+                      ),
+                const SizedBox(height: 14),
+
+                // ── الحالة الراهنة ──
+                DropdownButtonFormField<String>(
+                  value: selectedCaseStatus,
+                  decoration: _inputDeco('الحالة الراهنة', Icons.flag_rounded),
+                  items: _caseStatuses.map((s) => DropdownMenuItem(value: s['value'] as String, child: Text(s['label'] as String))).toList(),
+                  onChanged: (v) => setSheetState(() => selectedCaseStatus = v ?? 'جديد'),
+                ),
+                const SizedBox(height: 14),
+
+                // ── موضوع القضية ──
+                TextField(
+                  controller: subjectController,
+                  textDirection: ui.TextDirection.rtl,
+                  maxLines: 2,
+                  decoration: _inputDeco('موضوع القضية *', Icons.subject_rounded),
+                ),
+                const SizedBox(height: 20),
+
+                // ── أطراف القضية ──
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('أطراف القضية', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      const SizedBox(height: 10),
+
+                      // الطرف الأول – الموكل
+                      Row(children: [
+                        const Expanded(child: Text('الطرف الأول (الموكل)', style: TextStyle(fontSize: 13, color: Color(0xFF1B5E3B), fontWeight: FontWeight.w600))),
+                        IconButton(icon: const Icon(Icons.add_circle, color: Color(0xFF1B5E3B), size: 22), onPressed: () => addParty('client')),
+                      ]),
+                      if (clientParties.isNotEmpty)
+                        Wrap(spacing: 6, runSpacing: 4, children: [
+                          for (var i = 0; i < clientParties.length; i++) partyChip(clientParties[i], 'client', i),
+                        ]),
+                      if (clientParties.isEmpty)
+                        Text('لم يتم إضافة موكل بعد', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+
+                      const Divider(height: 20),
+
+                      // الطرف الثاني – الخصم
+                      Row(children: [
+                        const Expanded(child: Text('الطرف الثاني (الخصم)', style: TextStyle(fontSize: 13, color: Colors.red, fontWeight: FontWeight.w600))),
+                        IconButton(icon: const Icon(Icons.add_circle, color: Colors.red, size: 22), onPressed: () => addParty('opponent')),
+                      ]),
+                      if (opponentParties.isNotEmpty)
+                        Wrap(spacing: 6, runSpacing: 4, children: [
+                          for (var i = 0; i < opponentParties.length; i++) partyChip(opponentParties[i], 'opponent', i),
+                        ]),
+                      if (opponentParties.isEmpty)
+                        Text('لم يتم إضافة خصم بعد', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // ── زر الإنشاء ──
+                SizedBox(
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: isCreating ? null : () async {
+                      final caseNumText = caseNumberController.text.trim();
+                      if (caseNumText.isEmpty || int.tryParse(caseNumText) == null) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('يرجى إدخال رقم القضية (رقم صحيح)'), backgroundColor: Colors.red));
+                        return;
+                      }
+                      if (selectedCaseYear == null) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('يرجى اختيار سنة القضية'), backgroundColor: Colors.red));
+                        return;
+                      }
+                      if (subjectController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('يرجى إدخال موضوع القضية'), backgroundColor: Colors.red));
+                        return;
+                      }
+                      if (selectedCourtId == null) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('يرجى اختيار المحكمة'), backgroundColor: Colors.red));
+                        return;
+                      }
+                      if (subtypeOptions.isNotEmpty && (selectedCaseSubtype == null || selectedCaseSubtype!.isEmpty)) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('يرجى اختيار النوع الفرعي'), backgroundColor: Colors.red));
+                        return;
+                      }
+
+                      setSheetState(() => isCreating = true);
+
+                      try {
+                        final apiService = Provider.of<ApiService>(ctx, listen: false);
+                        final caseNumber = caseNumberController.text.trim();
+
+                        final newCase = CaseModel(
+                          caseNumber: caseNumber,
+                          subject: subjectController.text.trim(),
+                          filingDate: filingDateGregorian ?? DateTime.now(),
+                          gregorianDate: filingDateGregorian,
+                          caseYearHijri: selectedCaseYear,
+                          caseStatus: selectedCaseStatus,
+                          caseType: selectedCaseType,
+                          caseSubtype: selectedCaseSubtype,
+                          governorate: selectedGovernorateName,
+                          courtId: selectedCourtId,
+                        );
+
+                        final created = await apiService.createCase(newCase);
+
+                        // Create parties linked to this case
+                        final allParties = [...clientParties, ...opponentParties];
+                        final List<String> generatedPasswords = [];
+
+                        for (final p in allParties) {
+                          final party = CasePartyModel(
+                            caseId: created.id!,
+                            role: p['role'],
+                            entityType: p['entity_type'] ?? 'person',
+                            name: p['name'],
+                            phone: p['phone'],
+                            idNumber: p['id_number'],
+                            idIssuedFrom: p['id_issued_from'],
+                            address: p['address'],
+                          );
+                          final createdParty = await apiService.createCaseParty(party);
+                          if (createdParty.generatedPassword != null && createdParty.generatedPassword!.isNotEmpty) {
+                            generatedPasswords.add('${createdParty.name}: ${createdParty.phone} / ${createdParty.generatedPassword}');
+                          }
+                        }
+
+                        if (mounted) {
+                          Navigator.of(ctx).pop();
+                          final provider = Provider.of<LawsuitProvider>(outerContext, listen: false);
+                          provider.loadLawsuits(refresh: true);
+                          provider.loadCases(refresh: true);
+
+                          // Show generated passwords if any
+                          if (generatedPasswords.isNotEmpty) {
+                            showDialog(
+                              context: outerContext,
+                              builder: (dCtx) => AlertDialog(
+                                title: const Text('حسابات الموكلين', textAlign: TextAlign.right),
+                                content: SingleChildScrollView(child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    const Text('تم إنشاء حسابات تلقائية للموكلين:', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 8),
+                                    ...generatedPasswords.map((s) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Text(s, textDirection: ui.TextDirection.rtl, style: const TextStyle(fontSize: 13)),
+                                    )),
+                                    const SizedBox(height: 8),
+                                    Text('احفظ هذه البيانات - لن تظهر مرة أخرى', style: TextStyle(color: Colors.red[700], fontSize: 12)),
+                                  ],
+                                )),
+                                actions: [
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pop(dCtx);
+                                      navigator.push(MaterialPageRoute(builder: (_) => CaseDetailScreen(caseId: created.id!)));
+                                    },
+                                    child: const Text('حسناً'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          } else {
+                            navigator.push(MaterialPageRoute(builder: (_) => CaseDetailScreen(caseId: created.id!)));
+                          }
+                        }
+                      } catch (e) {
+                        setSheetState(() => isCreating = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('خطأ: ${e.toString()}'), backgroundColor: Colors.red));
+                        }
+                      }
+                    },
+                    icon: isCreating
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.folder_open_rounded),
+                    label: Text(isCreating ? 'جارٍ الإنشاء...' : 'إنشاء ملف القضية'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD4A940),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        },
+      ),
     );
   }
 
@@ -714,10 +1338,36 @@ class _ArchiveScreenState extends State<ArchiveScreen> with SingleTickerProvider
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: isArchived ? Colors.green : const Color(0xFFE91E63),
+              backgroundColor: isArchived ? Colors.green : const Color(0xFFD4A940),
               foregroundColor: Colors.white,
             ),
             child: Text(isArchived ? 'استعادة' : 'أرشفة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmResetDatabase(LawsuitProvider provider) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تحديث الأرشيف؟'),
+        content: const Text('سيتم تحميل بيانات القضايا من السيرفر.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await provider.loadLawsuits(refresh: true);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('تم تحديث البيانات بنجاح.'), backgroundColor: Colors.green),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+            child: const Text('نعم، تحديث'),
           ),
         ],
       ),
@@ -751,7 +1401,11 @@ class _ArchiveLawsuitCard extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => LawsuitDetailScreen(lawsuitId: lawsuit.id!),
+              builder: (context) => CaseArchiveDetailsScreen(
+                lawsuitId: lawsuit.id!,
+                caseTitle: lawsuit.subject ?? 'بدون عنوان',
+                caseNumber: lawsuit.caseNumber,
+              ),
             ),
           );
         },
@@ -773,6 +1427,20 @@ class _ArchiveLawsuitCard extends StatelessWidget {
                         color: Colors.grey[500],
                       ),
                     ),
+                  const SizedBox(width: 8),
+                  // Sync indicator/button
+                  if (!lawsuit.isSynced)
+                    IconButton(
+                      icon: const Icon(Icons.cloud_upload, color: Colors.orange, size: 20),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () {
+                        Provider.of<LawsuitProvider>(context, listen: false).loadLawsuits(refresh: true);
+                      },
+                      tooltip: 'تحديث',
+                    )
+                  else
+                    Icon(Icons.cloud_done, color: Colors.green.withOpacity(0.5), size: 16),
                   const SizedBox(width: 8),
                   // Status chip
                   _StatusBadge(status: lawsuit.caseStatus ?? lawsuit.status),
@@ -803,7 +1471,7 @@ class _ArchiveLawsuitCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A),
+                      color: Color(0xFF1A2138),
                     ),
                   ),
                 ],
@@ -851,14 +1519,14 @@ class _ArchiveLawsuitCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE91E63).withOpacity(0.08),
+                      color: const Color(0xFFD4A940).withOpacity(0.08),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       lawsuit.caseTypeDisplay,
                       style: const TextStyle(
                         fontSize: 11,
-                        color: Color(0xFFE91E63),
+                        color: Color(0xFFD4A940),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -890,7 +1558,11 @@ class _ArchiveGridCard extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => LawsuitDetailScreen(lawsuitId: lawsuit.id!),
+              builder: (context) => CaseArchiveDetailsScreen(
+                lawsuitId: lawsuit.id!,
+                caseTitle: lawsuit.subject ?? 'ملف قضية',
+                caseNumber: lawsuit.caseNumber,
+              ),
             ),
           );
         },
@@ -1214,7 +1886,7 @@ class _FilterBottomSheetState extends State<_FilterBottomSheet> {
                   icon: const Icon(Icons.check, size: 20),
                   label: const Text('تطبيق الفلترة', style: TextStyle(fontSize: 16)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE91E63),
+                    backgroundColor: const Color(0xFFD4A940),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/user_model.dart';
 import '../models/lawsuit_model.dart';
+import '../models/case_model.dart';
 
 /// API Service for communicating with Django backend
 class ApiService {
@@ -13,6 +14,51 @@ class ApiService {
   void setTokens(String accessToken, String refreshToken) {
     _accessToken = accessToken;
     _refreshToken = refreshToken;
+  }
+
+  // ========== Cases API ==========
+
+  Future<Map<String, dynamic>> getCases({Map<String, String>? queryParams}) async {
+    String endpoint = ApiConfig.casesEndpoint;
+    if (queryParams != null && queryParams.isNotEmpty) {
+      final queryString = queryParams.entries
+          .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+          .join('&');
+      endpoint += '?$queryString';
+    }
+    return await _makeRequest('GET', endpoint);
+  }
+
+  Future<CaseModel> getCase(int id) async {
+    final data = await _makeRequest('GET', '${ApiConfig.casesEndpoint}$id/');
+    return CaseModel.fromJson(data);
+  }
+
+  Future<CaseModel> createCase(CaseModel c) async {
+    final data = await _makeRequest('POST', ApiConfig.casesEndpoint, body: c.toJson());
+    return CaseModel.fromJson(data);
+  }
+
+  Future<CaseModel> updateCase(int id, CaseModel c) async {
+    final data = await _makeRequest('PATCH', '${ApiConfig.casesEndpoint}$id/', body: c.toJson());
+    return CaseModel.fromJson(data);
+  }
+
+  // ========== Case Parties API (أطراف القضية) ==========
+
+  Future<List<CasePartyModel>> getCaseParties(int caseId) async {
+    final data = await _makeRequest('GET', '${ApiConfig.casePartiesEndpoint}?case=$caseId');
+    final List<dynamic> items = (data['results'] as List?) ?? (data['data'] as List?) ?? [];
+    return items.map((e) => CasePartyModel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<CasePartyModel> createCaseParty(CasePartyModel party) async {
+    final data = await _makeRequest('POST', ApiConfig.casePartiesEndpoint, body: party.toJson());
+    return CasePartyModel.fromJson(data);
+  }
+
+  Future<void> deleteCaseParty(int id) async {
+    await _makeRequest('DELETE', '${ApiConfig.casePartiesEndpoint}$id/');
   }
 
   // Clear tokens on logout
@@ -35,6 +81,17 @@ class ApiService {
     }
     return headers;
   }
+
+  // Generic methods for custom endpoints
+  Future<dynamic> get(String endpoint) => _makeRequest('GET', endpoint);
+  
+  Future<dynamic> post(String endpoint, Map<String, dynamic>? body) => 
+      _makeRequest('POST', endpoint, body: body);
+      
+  Future<dynamic> patch(String endpoint, Map<String, dynamic>? body) => 
+      _makeRequest('PATCH', endpoint, body: body);
+      
+  Future<dynamic> delete(String endpoint) => _makeRequest('DELETE', endpoint);
 
   // Make HTTP request
   Future<Map<String, dynamic>> _makeRequest(
@@ -142,7 +199,7 @@ class ApiService {
       print('📡 [API] Response body: ${response.body}');
       
       // Handle empty response body
-      Map<String, dynamic> responseData;
+      dynamic responseData;
       if (response.body.isEmpty) {
         print('⚠️ [API] Empty response body');
         responseData = {};
@@ -383,7 +440,7 @@ class ApiService {
   }
 
   // Lawsuits
-  Future<Map<String, dynamic>> getLawsuits({Map<String, String>? queryParams}) async {
+  Future<dynamic> getLawsuits({Map<String, String>? queryParams}) async {
     String endpoint = ApiConfig.lawsuitsEndpoint;
     if (queryParams != null && queryParams.isNotEmpty) {
       final queryString = queryParams.entries
@@ -512,7 +569,7 @@ class ApiService {
   }
 
   // Attachments
-  Future<Map<String, dynamic>> getAttachments({int? lawsuitId}) async {
+  Future<dynamic> getAttachments({int? lawsuitId}) async {
     String endpoint = ApiConfig.attachmentsEndpoint;
     if (lawsuitId != null) {
       endpoint += '?lawsuit=$lawsuitId';
@@ -588,16 +645,143 @@ class ApiService {
   }
 
   // Hearings
-  Future<Map<String, dynamic>> getHearings({int? lawsuitId}) async {
+  Future<dynamic> getHearings({
+    int? lawsuitId,
+    String? hearingType,
+    int? judge,
+    String? hearingDate,
+    String? hearingDateFrom,
+    String? hearingDateTo,
+    String? createdFrom,
+    String? createdTo,
+    String? archiveStatus,
+    bool? includeDeleted,
+    String? search,
+    String? ordering,
+  }) async {
     String endpoint = ApiConfig.hearingsEndpoint;
+    final params = <String, String>{};
+    
     if (lawsuitId != null) {
-      endpoint += '?lawsuit=$lawsuitId';
+      params['lawsuit'] = lawsuitId.toString();
+    }
+    if (hearingType != null) {
+      params['hearing_type'] = hearingType;
+    }
+    if (judge != null) {
+      params['judge'] = judge.toString();
+    }
+    if (hearingDate != null) {
+      params['hearing_date'] = hearingDate;
+    }
+    if (hearingDateFrom != null) {
+      params['hearing_date_from'] = hearingDateFrom;
+    }
+    if (hearingDateTo != null) {
+      params['hearing_date_to'] = hearingDateTo;
+    }
+    if (createdFrom != null) {
+      params['created_from'] = createdFrom;
+    }
+    if (createdTo != null) {
+      params['created_to'] = createdTo;
+    }
+    if (archiveStatus != null) {
+      params['archive_status'] = archiveStatus;
+    }
+    if (includeDeleted != null) {
+      params['include_deleted'] = includeDeleted.toString();
+    }
+    if (search != null) {
+      params['search'] = search;
+    }
+    if (ordering != null) {
+      params['ordering'] = ordering;
+    }
+    
+    if (params.isNotEmpty) {
+      final queryString = params.entries
+          .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+          .join('&');
+      endpoint += '?$queryString';
+    }
+    
+    return await _makeRequest('GET', endpoint);
+  }
+
+  Future<Map<String, dynamic>> createHearing(Map<String, dynamic> hearingData) async {
+    return await _makeRequest('POST', ApiConfig.hearingsEndpoint, body: hearingData);
+  }
+
+  Future<Map<String, dynamic>> updateHearing(int id, Map<String, dynamic> hearingData) async {
+    return await _makeRequest('PATCH', '${ApiConfig.hearingsEndpoint}$id/', body: hearingData);
+  }
+
+  Future<void> deleteHearing(int id) async {
+    await _makeRequest('DELETE', '${ApiConfig.hearingsEndpoint}$id/');
+  }
+
+  // ========== Hearing Archive API ==========
+  
+  /// Archive a hearing session
+  Future<Map<String, dynamic>> archiveHearing(int id, {String? reason}) async {
+    return await _makeRequest(
+      'POST',
+      '${ApiConfig.hearingsEndpoint}$id/archive/',
+      body: {if (reason != null) 'archive_reason': reason},
+    );
+  }
+
+  /// Unarchive a hearing session
+  Future<Map<String, dynamic>> unarchiveHearing(int id) async {
+    return await _makeRequest(
+      'POST',
+      '${ApiConfig.hearingsEndpoint}$id/unarchive/',
+    );
+  }
+
+  /// Restore a soft-deleted hearing session
+  Future<Map<String, dynamic>> restoreHearing(int id) async {
+    return await _makeRequest(
+      'POST',
+      '${ApiConfig.hearingsEndpoint}$id/restore/',
+    );
+  }
+
+  /// Get daily hearings for a specific date
+  Future<dynamic> getDailyHearings(DateTime date) async {
+    final dateString = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return await getHearings(hearingDate: dateString);
+  }
+
+  // Lawyers
+  Future<dynamic> getLawyers({Map<String, String>? queryParams}) async {
+    String endpoint = ApiConfig.lawyersEndpoint;
+    if (queryParams != null && queryParams.isNotEmpty) {
+      final queryString = queryParams.entries
+          .map((e) => '${e.key}=${e.value}')
+          .join('&');
+      endpoint += '?$queryString';
     }
     return await _makeRequest('GET', endpoint);
   }
 
+  Future<Map<String, dynamic>> getLawyer(int id) async {
+    return await _makeRequest('GET', '${ApiConfig.lawyersEndpoint}$id/');
+  }
+
+  Future<List<String>> getLawyerBranches() async {
+    final response = await _makeRequest('GET', '${ApiConfig.lawyerFilterOptionsEndpoint}branches/');
+    return List<String>.from(response['branches'] ?? []);
+  }
+
+  Future<List<String>> getLawyerGrades() async {
+    final response = await _makeRequest('GET', '${ApiConfig.lawyerFilterOptionsEndpoint}grades/');
+    return List<String>.from(response['grades'] ?? []);
+  }
+
   // Judgments
-  Future<Map<String, dynamic>> getJudgments({int? lawsuitId}) async {
+  Future<dynamic> getJudgments({int? lawsuitId}) async {
     String endpoint = ApiConfig.judgmentsEndpoint;
     if (lawsuitId != null) {
       endpoint += '?lawsuit=$lawsuitId';
@@ -606,7 +790,7 @@ class ApiService {
   }
 
   // Appeals
-  Future<Map<String, dynamic>> getAppeals({int? lawsuitId}) async {
+  Future<dynamic> getAppeals({int? lawsuitId}) async {
     String endpoint = ApiConfig.appealsEndpoint;
     if (lawsuitId != null) {
       endpoint += '?lawsuit=$lawsuitId';
@@ -627,7 +811,7 @@ class ApiService {
   }
 
   // Payment Orders
-  Future<Map<String, dynamic>> getPaymentOrders({int? lawsuitId}) async {
+  Future<dynamic> getPaymentOrders({int? lawsuitId}) async {
     String endpoint = ApiConfig.paymentOrdersEndpoint;
     if (lawsuitId != null) {
       endpoint += '?lawsuit=$lawsuitId';
@@ -645,6 +829,83 @@ class ApiService {
 
   Future<void> deletePaymentOrder(int id) async {
     await _makeRequest('DELETE', '${ApiConfig.paymentOrdersEndpoint}$id/');
+  }
+
+  // ========== Financial Claims API (الأتعاب) ==========
+
+  Future<dynamic> getFinancialClaims({int? lawsuitId}) async {
+    String endpoint = ApiConfig.financialClaimsEndpoint;
+    if (lawsuitId != null) {
+      endpoint += '?lawsuit=$lawsuitId';
+    }
+    return await _makeRequest('GET', endpoint);
+  }
+
+  Future<Map<String, dynamic>> createFinancialClaim(Map<String, dynamic> claimData) async {
+    // Ensure lawsuit field is an int
+    final body = Map<String, dynamic>.from(claimData);
+    if (body['lawsuit'] is String) {
+      body['lawsuit'] = int.tryParse(body['lawsuit']);
+    }
+    return await _makeRequest('POST', ApiConfig.financialClaimsEndpoint, body: body);
+  }
+
+  Future<Map<String, dynamic>> updateFinancialClaim(int id, Map<String, dynamic> claimData) async {
+    return await _makeRequest('PATCH', '${ApiConfig.financialClaimsEndpoint}$id/', body: claimData);
+  }
+
+  Future<void> deleteFinancialClaim(int id) async {
+    await _makeRequest('DELETE', '${ApiConfig.financialClaimsEndpoint}$id/');
+  }
+
+  // ========== Case File Items API (ملف القضية) ==========
+
+  Future<dynamic> getCaseFileItems({int? lawsuitId}) async {
+    String endpoint = ApiConfig.caseFileItemsEndpoint;
+    if (lawsuitId != null) {
+      endpoint += '?lawsuit=$lawsuitId';
+    }
+    return await _makeRequest('GET', endpoint);
+  }
+
+  Future<Map<String, dynamic>> getCaseFileByLawsuit(int lawsuitId) async {
+    return await _makeRequest('GET', '${ApiConfig.caseFileItemsEndpoint}by_lawsuit/?lawsuit=$lawsuitId');
+  }
+
+  Future<Map<String, dynamic>> createCaseFileItem(Map<String, dynamic> data) async {
+    return await _makeRequest('POST', ApiConfig.caseFileItemsEndpoint, body: data);
+  }
+
+  Future<Map<String, dynamic>> uploadCaseFileItem({
+    required int lawsuitId,
+    required String filePath,
+    required String itemType,
+    required String title,
+    String? description,
+  }) async {
+    return await _makeRequest(
+      'POST',
+      ApiConfig.caseFileItemsEndpoint,
+      body: {
+        'lawsuit': lawsuitId.toString(),
+        'item_type': itemType,
+        'title': title,
+        if (description != null) 'description': description,
+      },
+      files: {'file': filePath},
+    );
+  }
+
+  Future<void> deleteCaseFileItem(int id) async {
+    await _makeRequest('DELETE', '${ApiConfig.caseFileItemsEndpoint}$id/');
+  }
+
+  Future<Map<String, dynamic>> syncCaseFileFromAttachments(int lawsuitId) async {
+    return await _makeRequest(
+      'POST',
+      '${ApiConfig.caseFileItemsEndpoint}sync_from_attachments/',
+      body: {'lawsuit': lawsuitId},
+    );
   }
 
   // ========== Courts API ==========
@@ -852,16 +1113,7 @@ class ApiService {
     return await _makeRequest('GET', '/api/legal-library/stats/');
   }
 
-  // ========== Hearings API (Daily Sessions) ==========
   
-  // Get daily hearings
-  Future<Map<String, dynamic>> getDailyHearings(DateTime date) async {
-    String endpoint = ApiConfig.hearingsEndpoint;
-    final dateStr = date.toIso8601String().split('T')[0]; // YYYY-MM-DD
-    endpoint += '?hearing_date=$dateStr';
-    return await _makeRequest('GET', endpoint);
-  }
-
   // ========== Logs API ==========
   
   // User Sessions
@@ -1061,5 +1313,18 @@ class ApiService {
   Future<Map<String, dynamic>> getLegalProceduresSources() async {
     return await _makeRequest('GET', '/api/legal-procedures/sources/');
   }
+
+  /// Get AI chat logs
+  Future<Map<String, dynamic>> getAIChatLogs({Map<String, String>? queryParams}) async {
+    String endpoint = '/api/ai-chat-logs/';
+    if (queryParams != null && queryParams.isNotEmpty) {
+      final queryString = queryParams.entries
+          .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+          .join('&');
+      endpoint += '?$queryString';
+    }
+    return await _makeRequest('GET', endpoint);
+  }
 }
+
 

@@ -15,15 +15,18 @@ class RAGService:
     def __init__(self):
         self.rag_api_url = os.getenv("RAG_API_URL")
         if not self.rag_api_url:
-            logger.error("RAG_API_URL environment variable not set.")
-            raise ValueError("RAG_API_URL environment variable not set.")
-        self.client = httpx.Client(base_url=self.rag_api_url, timeout=30.0)
+            logger.warning("RAG_API_URL environment variable not set. RAG features will be disabled.")
+            self.client = None
+        else:
+            self.client = httpx.Client(base_url=self.rag_api_url, timeout=30.0)
 
     def _make_request(self, method: str, endpoint: str, json_data: Optional[Dict] = None) -> Any:
         """
         Helper method to make HTTP requests to the RAG API.
         دالة مساعدة لإجراء طلبات HTTP إلى واجهة برمجة تطبيقات RAG.
         """
+        if not self.client:
+            raise ConnectionError("RAG client is not initialized (RAG_API_URL missing).")
         try:
             response = self.client.request(method, endpoint, json=json_data)
             response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)

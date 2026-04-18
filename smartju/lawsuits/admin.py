@@ -1,5 +1,16 @@
 from django.contrib import admin
 from .models import Lawsuit, LegalTemplate, FinancialClaim
+from .models_casefile import CaseFileItem
+
+
+@admin.register(CaseFileItem)
+class CaseFileItemAdmin(admin.ModelAdmin):
+    list_display = ('title', 'lawsuit', 'item_type', 'created_by', 'created_at')
+    list_filter = ('item_type', 'created_at')
+    search_fields = ('title', 'description', 'lawsuit__case_number')
+    raw_id_fields = ('lawsuit', 'created_by')
+    readonly_fields = ('created_at', 'updated_at', 'file_size')
+    ordering = ('-created_at',)
 
 
 @admin.register(LegalTemplate)

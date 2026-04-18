@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/auth_provider.dart';
 import 'providers/lawsuit_provider.dart';
+import 'providers/lawyer_provider.dart';
 import 'providers/ai_chat_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/inheritance_provider.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -49,15 +51,25 @@ import 'screens/notifications_screen.dart';
 import 'screens/electronic_services_screen.dart';
 import 'screens/edit_profile_screen.dart';
 import 'screens/change_password_screen.dart';
+import 'screens/lawyer_dashboard_screen.dart';
+import 'screens/case_archive_details_screen.dart';
+import 'screens/messages_list_screen.dart';
+import 'screens/chat_screen.dart';
+import 'screens/citizen_dashboard_screen.dart';
+import 'screens/create_sub_account_screen.dart';
+import 'screens/archive_screen.dart';
 import 'web_url_strategy.dart';
+import 'theme/app_theme.dart';
+import 'config/api_config.dart';
 
 void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     
     // إعداد URL strategy لـ Flutter Web
-    // هذا يضمن أن التطبيق يعمل بشكل صحيح عند فتح الرابط مباشرة
     configureWebUrlStrategy();
+
+    await ApiConfig.initialize();
     
     final prefs = await SharedPreferences.getInstance();
     final bool showOnboarding = prefs.getBool('onboarding_completed') != true;
@@ -78,11 +90,14 @@ class MyApp extends StatelessWidget {
     
     return MultiProvider(
       providers: [
+        Provider<ApiService>(create: (_) => apiService),
         ChangeNotifierProvider(create: (_) => AuthProvider(apiService: apiService)..initialize()),
         ChangeNotifierProvider(create: (_) => LawsuitProvider(apiService: apiService)),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => AIChatProvider()),
-        ChangeNotifierProvider(create: (_) => ChatProvider()), // New chat provider for enhanced AI assistant
+        ChangeNotifierProvider(create: (_) => ChatProvider()), 
+        ChangeNotifierProvider(create: (_) => LawyerProvider(apiService: apiService)),
+        ChangeNotifierProvider(create: (_) => InheritanceProvider(apiService: apiService)),
         ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
           create: (_) => NotificationProvider(apiService),
           update: (_, auth, prev) => NotificationProvider(apiService),
@@ -93,53 +108,65 @@ class MyApp extends StatelessWidget {
           return MaterialApp(
             title: 'SmartJudi',
             debugShowCheckedModeBanner: false,
-            // استخدام routes فقط لضمان التوافق مع جميع المنصات
             initialRoute: '/',
-            theme: ThemeData(
-              useMaterial3: true,
-              fontFamily: 'Cairo', // تأكد من وجود الخط في pubspec.yaml
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: const Color(0xFFD4AF37), // ذهبي
-                primary: const Color(0xFFD4AF37),
-                secondary: const Color(0xFFB8860B),
-                surface: const Color(0xFFFDFBF7), // بيج فاتح جداً كخلفية
-              ),
-              scaffoldBackgroundColor: const Color(0xFFFDFBF7),
-              elevatedButtonTheme: ElevatedButtonThemeData(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFD4AF37),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 55),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
-                ),
-              ),
-            ),
-            // استخدام routes فقط - لا نستخدم home لتجنب التعارض
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: settings.darkModeEnabled ? ThemeMode.dark : ThemeMode.light,
             routes: {
-              '/': (context) => showOnboarding ? const OnboardingScreen() : const AuthWrapper(),
+              '/': (context) => AuthWrapper(showOnboarding: showOnboarding),
               '/login': (context) => const LoginScreen(),
               '/register': (context) => const RegisterScreen(),
-              '/home': (context) => const HomeScreen(),
-              '/profile': (context) => const EditProfileScreen(),
-              '/change-password': (context) => const ChangePasswordScreen(),
-              '/electronic-services': (context) => const ElectronicServicesScreen(),
-              '/services': (context) => const ServicesScreen(),
+              '/library': (context) => const LegalLibraryScreen(),
               '/legal-library': (context) => const LegalLibraryScreen(),
-              '/smart-assistant': (context) => const SmartAssistantScreen(),
-              '/inquiries': (context) => const InquiriesScreen(),
-              '/daily-sessions': (context) => const DailySessionsScreen(),
-              '/electronic-lawsuit': (context) => const ElectronicLawsuitScreen(),
-              '/laws': (context) => const LawsScreen(),
+              '/chat': (context) => const SmartAssistantScreen(),
               '/training': (context) => const TrainingScreen(),
-              '/supreme-court': (context) => const SupremeCourtScreen(),
+              '/inquiries': (context) => const InquiriesScreen(),
+              '/contact': (context) => const ContactUsScreen(),
+              '/about': (context) => const AboutUsScreen(),
               '/blog': (context) => const BlogScreen(),
+              '/laws': (context) => const LawsScreen(),
+              '/services': (context) => const ServicesScreen(),
+              '/complaints': (context) => const ComplaintScreen(),
+              '/sessions': (context) => const DailySessionsScreen(),
+              '/calendar': (context) => const CalendarScreen(),
+              '/electronic-lawsuit': (context) => const ElectronicLawsuitScreen(),
+              '/supreme-court': (context) => const SupremeCourtScreen(),
               '/faq': (context) => const FAQScreen(),
-              '/about-us': (context) => const AboutUsScreen(),
-              '/contact-us': (context) => const ContactUsScreen(),
-              '/notifications': (context) => const NotificationsScreen(),
               '/subscribe': (context) => const SubscribeScreen(),
+              '/settings': (context) => const SettingsScreen(),
+              '/payment': (context) => const PaymentOrderScreen(),
+              '/appeal': (context) => const AppealScreen(),
+              '/database': (context) => const LegalDatabaseScreen(),
               '/case-analysis': (context) => const AICaseAnalysisScreen(),
+              '/case-management': (context) => const CaseManagementScreen(),
+              '/accounting': (context) => const CaseAccountingScreen(),
+              '/forms': (context) => const LegalFormsScreen(),
+              '/consultations': (context) => const RemoteConsultationsScreen(),
+              '/procedures': (context) => const ProceduresGuideScreen(),
+              '/inheritance': (context) => const InheritanceCalculationScreen(),
+              '/area': (context) => const AreaCalculationScreen(),
+              '/notary-accounting': (context) => const NotaryAccountingScreen(),
+              '/agencies': (context) => const ContractsAgenciesScreen(),
+              '/notifications': (context) => const NotificationsScreen(),
+              '/electronic-services': (context) => const ElectronicServicesScreen(),
+              '/edit-profile': (context) => const EditProfileScreen(),
+              '/change-password': (context) => const ChangePasswordScreen(),
+              '/lawyer-dashboard': (context) => const LawyerDashboardScreen(),
+              '/lawsuits': (context) => ArchiveScreen(),
+              '/messages': (context) => MessagesListScreen(),
+              '/create-sub-account': (context) => CreateSubAccountScreen(),
+              '/profile': (context) => EditProfileScreen(),
+              '/case-detail': (context) {
+                final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+                return CaseArchiveDetailsScreen(
+                  lawsuitId: args['id'] as int,
+                  caseTitle: args['title'] as String? ?? 'بدون عنوان',
+                  caseNumber: args['number'] as String? ?? '',
+                );
+              },
+              '/messages': (context) => const MessagesListScreen(),
+              '/citizen-dashboard': (context) => const CitizenDashboardScreen(),
+              '/create-sub-account': (context) => const CreateSubAccountScreen(),
             },
           );
         },
@@ -148,15 +175,53 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
-  const AuthWrapper({super.key});
+class AuthWrapper extends StatefulWidget {
+  final bool showOnboarding;
+  const AuthWrapper({super.key, required this.showOnboarding});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  late bool _showingOnboarding;
+
+  @override
+  void initState() {
+    super.initState();
+    _showingOnboarding = widget.showOnboarding;
+  }
+
+  void _onOnboardingComplete() {
+    setState(() {
+      _showingOnboarding = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        if (auth.isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        return auth.isAuthenticated ? const HomeScreen() : const LoginScreen();
-      },
-    );
+    if (_showingOnboarding) {
+      return OnboardingScreen(onComplete: _onOnboardingComplete);
+    }
+
+    final authProvider = Provider.of<AuthProvider>(context);
+
+    if (authProvider.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!authProvider.isAuthenticated) {
+      return const LoginScreen();
+    }
+
+    // Role-based redirection
+    final user = authProvider.currentUser;
+    if (user != null && user.role == 'citizen') {
+      return const CitizenDashboardScreen();
+    }
+
+    return const HomeScreen();
   }
 }

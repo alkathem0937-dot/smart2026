@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مرحباً بك في SmartJudi | منصة القضاء الذكية</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Cairo', sans-serif; }
+        .hero-bg {
+            background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
+        }
+        .gold-border { border-color: #ca8a04; }
+        .gold-text { color: #ca8a04; }
+        .gold-bg { background-color: #ca8a04; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <!-- Navbar -->
+    <nav class="bg-white/80 backdrop-blur-md sticky top-0 z-50 border-b border-gray-100">
+        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 gold-bg rounded-xl flex items-center justify-center text-white shadow-lg">
+                    <i class="fas fa-balance-scale text-xl"></i>
+                </div>
+                <span class="text-2xl font-black tracking-tight">SmartJudi</span>
+            </div>
+            <div class="hidden md:flex items-center gap-8 font-bold text-gray-600">
+                <a href="#services" class="hover:gold-text transition-colors">الخدمات</a>
+                <a href="#plans" class="hover:gold-text transition-colors">الباقات</a>
+                <a href="#about" class="hover:gold-text transition-colors">عن المنصة</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="/login/" class="text-gray-700 font-bold hover:gold-text">تسجيل الدخول</a>
+                <a href="/register/" class="gold-bg text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-yellow-600/20 hover:scale-105 transition-transform">ابدأ الآن</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero-bg text-white py-24 px-6 overflow-hidden relative">
+        <div class="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 items-center relative z-10">
+            <div>
+                <span class="bg-yellow-500/10 text-yellow-500 px-4 py-1.5 rounded-full text-sm font-bold border border-yellow-500/20 mb-6 inline-block">مستقبل العدالة الرقمية</span>
+                <h1 class="text-5xl md:text-7xl font-black leading-tight mb-6">منصة القضاء الذكية <span class="gold-text">المتكاملة</span></h1>
+                <p class="text-gray-400 text-xl mb-10 leading-relaxed">أول منصة قانونية ذكية تربط المحامين، المواطنين، والموثقين ببيئة تقنية واحدة مدعومة بالذكاء الاصطناعي لتسهيل الإجراءات القانونية.</p>
+                <div class="flex flex-wrap gap-4">
+                    <a href="/register/" class="gold-bg text-white px-8 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 transition-all">اشترك الآن مجاناً</a>
+                    <a href="#services" class="bg-white/5 border border-white/10 px-8 py-4 rounded-2xl font-black text-lg hover:bg-white/10 transition-all">اكتشف الخدمات</a>
+                </div>
+            </div>
+            <div class="relative">
+                <div class="absolute -top-20 -right-20 w-96 h-96 bg-yellow-500/10 rounded-full blur-3xl"></div>
+                <div class="bg-white/5 border border-white/10 p-8 rounded-[40px] backdrop-blur-xl shadow-2xl relative">
+                    <div class="flex items-center gap-4 mb-8">
+                        <div class="w-12 h-12 rounded-full gold-bg flex items-center justify-center text-2xl"><i class="fas fa-robot text-white"></i></div>
+                        <div>
+                            <p class="font-bold text-lg">المساعد القانوني الذكي</p>
+                            <p class="text-gray-500 text-sm">متصل بآخر اللوائح التشريعية</p>
+                        </div>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="bg-white/5 p-4 rounded-2xl text-sm border border-white/5 text-gray-300">كيف يمكنني رفع دعوى تجارية إلكترونية؟</div>
+                        <div class="bg-yellow-500/20 p-4 rounded-2xl text-sm border border-yellow-500/30 text-gray-200 leading-relaxed">بناءً على نظام الإجراءات، يجب عليك أولاً توثيق الهوية، ثم اختيار نوع المحكمة المختصة وارفاق صحيفة الدعوى...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Portals -->
+    <section id="services" class="py-24 px-6 max-w-7xl mx-auto">
+        <div class="text-center mb-16">
+            <h2 class="text-4xl font-black mb-4">بوابات متخصصة لكل مستخدم</h2>
+            <p class="text-gray-500 text-xl">قمنا بتصميم تجربة فريدة تتناسب مع دورك في النظام القضائي</p>
+        </div>
+        <div class="grid md:grid-cols-3 gap-8">
+            <!-- Citizen -->
+            <div class="bg-white p-10 rounded-[32px] border border-gray-100 shadow-xl hover:shadow-2xl transition-all group">
+                <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-3xl mb-8 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
+                    <i class="fas fa-user"></i>
+                </div>
+                <h3 class="text-2xl font-black mb-4">بوابة المواطن</h3>
+                <ul class="text-gray-500 space-y-3 mb-8">
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> تتبع وتنبيهات القضايا حياً</li>
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> رفع الدعاوى والطلبات</li>
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> استعلامات يومية ومكتبة</li>
+                </ul>
+                <a href="/register/?role=citizen" class="text-blue-600 font-bold flex items-center gap-2 group-hover:gap-4 transition-all">سجل كمواطن <i class="fas fa-arrow-left"></i></a>
+            </div>
+            <!-- Lawyer -->
+            <div class="bg-white p-10 rounded-[32px] border border-gray-100 shadow-xl hover:shadow-2xl transition-all group border-b-4 border-b-yellow-500">
+                <div class="w-16 h-16 bg-yellow-50 text-yellow-600 rounded-2xl flex items-center justify-center text-3xl mb-8 group-hover:gold-bg group-hover:text-white transition-all shadow-sm">
+                    <i class="fas fa-user-tie"></i>
+                </div>
+                <h3 class="text-2xl font-black mb-4">بوابة المحامي</h3>
+                <ul class="text-gray-500 space-y-3 mb-8">
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> تحليل وبناء الدفوع بالـ AI</li>
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> إدارة الموكلين والمحاسبة</li>
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> صياغة العقود والنماذج</li>
+                </ul>
+                <a href="/register/?role=lawyer" class="gold-text font-bold flex items-center gap-2 group-hover:gap-4 transition-all">سجل كمحامي <i class="fas fa-arrow-left"></i></a>
+            </div>
+            <!-- Notary -->
+            <div class="bg-white p-10 rounded-[32px] border border-gray-100 shadow-xl hover:shadow-2xl transition-all group">
+                <div class="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-3xl mb-8 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-sm">
+                    <i class="fas fa-pen-nib"></i>
+                </div>
+                <h3 class="text-2xl font-black mb-4">بوابة الموثق</h3>
+                <ul class="text-gray-500 space-y-3 mb-8">
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> حاسبة المواريث والتركات</li>
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> تقسيم المساحات والخرائط</li>
+                    <li><i class="fas fa-check-circle gold-text ml-2"></i> إصدار الوكالات والمحررات</li>
+                </ul>
+                <a href="/register/?role=notary" class="text-emerald-600 font-bold flex items-center gap-2 group-hover:gap-4 transition-all">سجل كأمين <i class="fas fa-arrow-left"></i></a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="plans" class="bg-gray-100 py-24 px-6">
+        <div class="max-w-7xl mx-auto">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl font-black mb-4">خطط واشتراكات مرنة</h2>
+                <p class="text-gray-500 text-xl font-medium">اختر الباقة التي تناسب حجم أعمالك القضائية</p>
+            </div>
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Free -->
+                <div class="bg-white p-8 rounded-3xl border border-gray-200">
+                    <h4 class="font-bold text-xl mb-2">الباقة المجانية</h4>
+                    <div class="text-4xl font-black mb-6">0 <span class="text-lg text-gray-400 font-bold">ر.ي/شهر</span></div>
+                    <ul class="space-y-4 text-gray-600 mb-8 font-medium">
+                        <li><i class="fas fa-check mr-2 text-green-500"></i> تتبع 3 قضايا شخصية</li>
+                        <li><i class="fas fa-check mr-2 text-green-500"></i> بحث محدود في المكتبة</li>
+                        <li><i class="fas fa-check mr-2 text-green-500"></i> مساعد ذكي (5 أسئلة/يوم)</li>
+                    </ul>
+                    <a href="/register/" class="block text-center border-2 border-gray-900 text-gray-900 py-3 rounded-xl font-bold hover:bg-gray-900 hover:text-white transition-all">ابدأ الآن</a>
+                </div>
+                <!-- Lawyer/Pro -->
+                <div class="bg-white p-8 rounded-3xl border-2 gold-border shadow-2xl relative">
+                    <div class="absolute -top-4 right-8 gold-bg text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">الأكثر طلباً</div>
+                    <h4 class="font-bold text-xl mb-2">باقة المحامي المحترف</h4>
+                    <div class="gold-text text-4xl font-black mb-6">50 <span class="text-lg text-gray-400 font-bold">$/شهر</span></div>
+                    <ul class="space-y-4 text-gray-600 mb-8 font-medium">
+                        <li><i class="fas fa-check mr-2 gold-text"></i> إدارة موكلين غير محدودة</li>
+                        <li><i class="fas fa-check mr-2 gold-text"></i> تحليل AI كامل للقضايا</li>
+                        <li><i class="fas fa-check mr-2 gold-text"></i> دخول كامل للمكتبة واللوائح</li>
+                        <li><i class="fas fa-check mr-2 gold-text"></i> دعم فني مخصص 24/7</li>
+                    </ul>
+                    <a href="/register/payment/?plan=pro" class="block text-center gold-bg text-white py-3 rounded-xl font-bold shadow-lg shadow-yellow-600/20 hover:scale-105 transition-all">اشترك الآن</a>
+                </div>
+                <!-- Enterprise -->
+                <div class="bg-white p-8 rounded-3xl border border-gray-200">
+                    <h4 class="font-bold text-xl mb-2">باقة الشركات والمكاتب</h4>
+                    <div class="text-4xl font-black mb-6">120 <span class="text-lg text-gray-400 font-bold">$/شهر</span></div>
+                    <ul class="space-y-4 text-gray-600 mb-8 font-medium">
+                        <li><i class="fas fa-check mr-2 text-green-500"></i> حسابات متعددة للموظفين</li>
+                        <li><i class="fas fa-check mr-2 text-green-500"></i> نظام محاسبي متكامل</li>
+                        <li><i class="fas fa-check mr-2 text-green-500"></i> تقارير وتحليلات أداء دورية</li>
+                    </ul>
+                    <a href="/register/payment/?plan=enterprise" class="block text-center border-2 border-gray-900 text-gray-900 py-3 rounded-xl font-bold hover:bg-gray-900 hover:text-white transition-all">تواصل معنا</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-400 py-12 px-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 gold-bg rounded-lg flex items-center justify-center text-white"><i class="fas fa-balance-scale"></i></div>
+                <span class="text-white text-xl font-black">SmartJudi</span>
+            </div>
+            <p>&copy; 2026 SmartJudi. جميع الحقوق محفوظة.</p>
+            <div class="flex gap-6 text-xl">
+                <i class="fab fa-twitter hover:text-white cursor-pointer"></i>
+                <i class="fab fa-facebook hover:text-white cursor-pointer"></i>
+                <i class="fab fa-linkedin hover:text-white cursor-pointer"></i>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

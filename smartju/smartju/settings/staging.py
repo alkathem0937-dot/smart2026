@@ -15,9 +15,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEBUG = False
 
 # SECURITY WARNING: keep the secret key used in production secret!
-# SECRET_KEY is inherited from base.py, can be overridden via environment variable
 if 'SECRET_KEY' in os.environ:
     SECRET_KEY = os.environ.get('SECRET_KEY')  # noqa: F405
+
+if SECRET_KEY == 'django-insecure-4cyci@v!&=khm4+b)(^n@&k0((=5o5=o^r8w&)#4h=wdl)cjx=':
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured("SECRET_KEY must be set in the environment for staging.")
 
 # Allowed hosts for staging environment
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')

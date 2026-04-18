@@ -20,6 +20,7 @@ class CaseManagementScreen extends StatelessWidget {
             title: 'أرشفة القضايا الإلكترونية',
             description: 'أرشفة القضايا إلكترونياً مع مسح وتخزين الوثائق المتعلقة بكل قضية',
             color: Colors.blue,
+            onTap: () => Navigator.pushNamed(context, '/lawsuits'),
           ),
           _buildFeatureCard(
             context,
@@ -27,6 +28,7 @@ class CaseManagementScreen extends StatelessWidget {
             title: 'تقويم الجلسات والإشعارات',
             description: 'تقويم الجلسات مع إشعارات ذكية للمتابعة',
             color: Colors.green,
+            onTap: () => Navigator.pushNamed(context, '/calendar'),
           ),
           _buildFeatureCard(
             context,
@@ -34,6 +36,7 @@ class CaseManagementScreen extends StatelessWidget {
             title: 'متابعة تقدم القضايا',
             description: 'تتبع حالة القضايا ومراحل تقدمها',
             color: Colors.orange,
+            onTap: () => Navigator.pushNamed(context, '/lawsuits'),
           ),
           _buildFeatureCard(
             context,
@@ -41,6 +44,7 @@ class CaseManagementScreen extends StatelessWidget {
             title: 'التواصل مع العملاء',
             description: 'دردشة للتواصل مع العملاء عبر المنصة',
             color: Colors.purple,
+            onTap: () => Navigator.pushNamed(context, '/messages'),
           ),
           _buildFeatureCard(
             context,
@@ -48,6 +52,7 @@ class CaseManagementScreen extends StatelessWidget {
             title: 'منح صلاحيات الوصول',
             description: 'منح العملاء صلاحيات الوصول لإجراءات القضايا وإرسال الملاحظات',
             color: Colors.teal,
+            onTap: () => Navigator.pushNamed(context, '/create-sub-account'),
           ),
         ],
       ),
@@ -60,6 +65,7 @@ class CaseManagementScreen extends StatelessWidget {
     required String title,
     required String description,
     required Color color,
+    required VoidCallback onTap,
   }) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -75,11 +81,7 @@ class CaseManagementScreen extends StatelessWidget {
         ),
         subtitle: Text(description),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('قريباً: $title')),
-          );
-        },
+        onTap: onTap,
       ),
     );
   }

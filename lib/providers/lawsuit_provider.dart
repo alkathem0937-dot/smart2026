@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
 import '../models/lawsuit_model.dart';
+import '../models/case_model.dart';
 
 /// Lawsuit Provider for managing lawsuits state - with archive support
 class LawsuitProvider with ChangeNotifier {
@@ -10,8 +11,10 @@ class LawsuitProvider with ChangeNotifier {
       : _apiService = apiService ?? ApiService();
 
   List<LawsuitModel> _lawsuits = [];
+  List<CaseModel> _cases = [];
   LawsuitModel? _selectedLawsuit;
   bool _isLoading = false;
+  bool _isLoadingCases = false;
   String? _errorMessage;
   int _totalCount = 0;
   int _currentPage = 1;
@@ -30,6 +33,8 @@ class LawsuitProvider with ChangeNotifier {
   String? _filingDateTo;
   String? _ordering;
 
+  List<CaseModel> get cases => _cases;
+  bool get isLoadingCases => _isLoadingCases;
   List<LawsuitModel> get lawsuits => _lawsuits;
   LawsuitModel? get selectedLawsuit => _selectedLawsuit;
   bool get isLoading => _isLoading;
@@ -152,6 +157,7 @@ class LawsuitProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
+    // Fetch from API only (no local DB)
     try {
       final queryParams = _buildQueryParams();
       if (filters != null) {
@@ -160,43 +166,50 @@ class LawsuitProvider with ChangeNotifier {
 
       final response = await _apiService.getLawsuits(queryParams: queryParams);
       
-      List<dynamic> resultsList;
-      int? totalCount;
-      bool hasMore;
+      List<dynamic> resultsList = [];
+      int totalCount = 0;
+      bool hasMore = false;
       
-      if (response.containsKey('data')) {
-        final data = response['data'];
-        if (data is Map && data.containsKey('results')) {
-          resultsList = data['results'] as List? ?? [];
-          totalCount = data['count'] as int? ?? 0;
-          hasMore = data['next'] != null;
-        } else if (data is List) {
-          resultsList = data;
-          totalCount = data.length;
-          hasMore = false;
-        } else {
-          final pagination = response['pagination'] as Map?;
-          if (pagination != null) {
-            totalCount = pagination['count'] as int? ?? 0;
-            hasMore = pagination['next'] != null;
-          } else {
-            totalCount = 0;
-            hasMore = false;
-          }
-          resultsList = [];
-        }
-      } else if (response.containsKey('results')) {
-        resultsList = (response['results'] as List?) ?? [];
-        totalCount = response['count'] as int? ?? 0;
-        hasMore = response['next'] != null;
-      } else {
-        resultsList = [];
-        totalCount = 0;
+      if (response is List) {
+        resultsList = response;
+        totalCount = response.length;
         hasMore = false;
+      } else if (response is Map) {
+        if (response.containsKey('data')) {
+          final data = response['data'];
+          if (data is Map && data.containsKey('results')) {
+            resultsList = data['results'] as List? ?? [];
+            totalCount = data['count'] as int? ?? 0;
+            hasMore = data['next'] != null;
+          } else if (data is List) {
+            resultsList = data;
+            totalCount = data.length;
+            hasMore = false;
+          } else {
+            final pagination = response['pagination'] as Map?;
+            if (pagination != null) {
+              totalCount = pagination['count'] as int? ?? 0;
+              hasMore = pagination['next'] != null;
+            }
+            resultsList = [];
+          }
+        } else if (response.containsKey('results')) {
+          resultsList = (response['results'] as List?) ?? [];
+          totalCount = response['count'] as int? ?? 0;
+          hasMore = response['next'] != null;
+        }
       }
       
       final results = resultsList
-          .map((json) => LawsuitModel.fromJson(json))
+          .map((json) {
+            try {
+              return LawsuitModel.fromJson(json);
+            } catch (e) {
+              print('Error parsing lawsuit: $e');
+              return null;
+            }
+          })
+          .whereType<LawsuitModel>()
           .toList();
 
       if (refresh) {
@@ -204,6 +217,11 @@ class LawsuitProvider with ChangeNotifier {
       } else {
         _lawsuits.addAll(results);
       }
+      
+      // Remove duplicates based on ID
+      _lawsuits = _lawsuits.where((l) => l.id != null).toSet().toList();
+      _lawsuits.sort((a, b) => (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
+      _lawsuits = _lawsuits.where((l) => !l.isDeleted).toList();
 
       _totalCount = totalCount ?? 0;
       _hasMore = hasMore;
@@ -212,9 +230,10 @@ class LawsuitProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = _lawsuits.isEmpty ? e.toString() : null;
       _isLoading = false;
       notifyListeners();
+      print('API Fetch error: $e');
     }
   }
 
@@ -252,12 +271,15 @@ class LawsuitProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final newLawsuit = await _apiService.createLawsuit(lawsuit);
-      _lawsuits.insert(0, newLawsuit);
-      _selectedLawsuit = newLawsuit; // Store created lawsuit for easy access
+      // Sync to Backend only (no local save)
+      final createdLawsuit = await _apiService.createLawsuit(lawsuit);
+      
+      // Update local list
+      await loadLawsuits(refresh: true);
+
       _isLoading = false;
       notifyListeners();
-      return newLawsuit;
+      return createdLawsuit; 
     } catch (e) {
       _errorMessage = e.toString();
       _isLoading = false;
@@ -340,6 +362,32 @@ class LawsuitProvider with ChangeNotifier {
       _errorMessage = e.toString();
       notifyListeners();
       return false;
+    }
+  }
+
+  // ── Cases ──
+
+  Future<void> loadCases({bool refresh = false}) async {
+    _isLoadingCases = true;
+    notifyListeners();
+    try {
+      final response = await _apiService.getCases();
+      List<dynamic> resultsList = (response['results'] as List?) ??
+          (response['data'] is List ? response['data'] as List : []);
+      if (resultsList.isEmpty && response['data'] is Map) {
+        resultsList = ((response['data'] as Map)['results'] as List?) ?? [];
+      }
+      _cases = resultsList
+          .map((json) {
+            try { return CaseModel.fromJson(json); } catch (_) { return null; }
+          })
+          .whereType<CaseModel>()
+          .toList();
+    } catch (e) {
+      debugPrint('Error loading cases: $e');
+    } finally {
+      _isLoadingCases = false;
+      notifyListeners();
     }
   }
 

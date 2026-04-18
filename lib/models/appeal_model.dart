@@ -64,7 +64,7 @@ class AppealModel {
   Map<String, dynamic> toJson() {
     return {
       if (id != null) 'id': id,
-      'lawsuit_id': lawsuitId,
+      'lawsuit': lawsuitId,
       'appeal_type': appealType,
       'appeal_number': appealNumber,
       'appeal_reasons': appealReasons,

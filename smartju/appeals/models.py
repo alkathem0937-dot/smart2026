@@ -71,6 +71,8 @@ class Appeal(models.Model):
     
     # Appeal requests
     appeal_requests = models.TextField(
+        blank=True,
+        null=True,
         verbose_name='طلبات الطعن'
     )
     

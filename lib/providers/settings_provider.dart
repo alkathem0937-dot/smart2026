@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer' as developer;
 
+import '../config/api_config.dart';
+
 /// Settings Provider - manages app settings using SharedPreferences
 class SettingsProvider with ChangeNotifier {
   static const String _keyNotifications = 'notifications_enabled';
@@ -73,7 +75,12 @@ class SettingsProvider with ChangeNotifier {
   Future<void> clearLocalData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final savedApi = prefs.getString(ApiConfig.prefsKeyApiBaseUrl);
       await prefs.clear();
+      if (savedApi != null && savedApi.isNotEmpty) {
+        await prefs.setString(ApiConfig.prefsKeyApiBaseUrl, savedApi);
+      }
+      await ApiConfig.initialize();
       // Reset to defaults
       _notificationsEnabled = true;
       _darkModeEnabled = false;

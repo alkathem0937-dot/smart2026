@@ -143,13 +143,12 @@ class UserRegistrationSerializer(serializers.Serializer):
             last_name=validated_data.get('last_name', ''),
         )
         
-        # Create UserProfile
-        profile = UserProfile.objects.create(
-            user=user,
-            role=validated_data.get('role', UserProfile.ROLE_CITIZEN),
-            phone_number=validated_data.get('phone_number') or None,
-            national_id=validated_data.get('national_id') or None,
-        )
+        # Get or Update UserProfile (it's automatically created by a signal in models.py)
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = validated_data.get('role', UserProfile.ROLE_CITIZEN)
+        profile.phone_number = validated_data.get('phone_number') or None
+        profile.national_id = validated_data.get('national_id') or None
+        profile.save()
         
         return {
             'user': UserSerializer(user).data,

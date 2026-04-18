@@ -102,6 +102,59 @@ class Hearing(models.Model):
         verbose_name='تاريخ التحديث'
     )
     
+    # ========== Archive Lifecycle Fields ==========
+    
+    # Archive status
+    ARCHIVE_ACTIVE = 'active'
+    ARCHIVE_SEMI_ACTIVE = 'semi_active'
+    ARCHIVE_ARCHIVED = 'archived'
+    
+    ARCHIVE_STATUS_CHOICES = [
+        (ARCHIVE_ACTIVE, 'نشط'),
+        (ARCHIVE_SEMI_ACTIVE, 'شبه نشط'),
+        (ARCHIVE_ARCHIVED, 'محفوظ'),
+    ]
+    
+    archive_status = models.CharField(
+        max_length=20,
+        choices=ARCHIVE_STATUS_CHOICES,
+        default=ARCHIVE_ACTIVE,
+        verbose_name='حالة الأرشفة'
+    )
+    
+    archive_date = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='تاريخ الأرشفة'
+    )
+    
+    archive_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='سبب الأرشفة'
+    )
+    
+    archived_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='archived_hearings',
+        verbose_name='أرشف بواسطة'
+    )
+    
+    # Soft delete
+    is_deleted = models.BooleanField(
+        default=False,
+        verbose_name='محذوف'
+    )
+    
+    deleted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='تاريخ الحذف'
+    )
+    
     class Meta:
         verbose_name = 'جلسة'
         verbose_name_plural = 'جلسات'
@@ -111,6 +164,8 @@ class Hearing(models.Model):
             models.Index(fields=['hearing_date']),
             models.Index(fields=['hearing_type']),
             models.Index(fields=['judge']),
+            models.Index(fields=['archive_status']),
+            models.Index(fields=['is_deleted']),
         ]
     
     def __str__(self):

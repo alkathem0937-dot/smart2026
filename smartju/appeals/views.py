@@ -10,7 +10,6 @@ class AppealViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Appeal
     """
-    queryset = Appeal.objects.select_related('lawsuit', 'submitted_by_user').all()
     serializer_class = AppealSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -18,6 +17,18 @@ class AppealViewSet(viewsets.ModelViewSet):
     search_fields = ['appeal_number', 'appeal_reasons', 'appeal_requests', 'higher_court']
     ordering_fields = ['created_at', 'appeal_date']
     ordering = ['-appeal_date', '-created_at']
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            return Appeal.objects.all()
+
+        from django.db.models import Q
+        return Appeal.objects.filter(
+            Q(lawsuit__created_by=user) | 
+            Q(lawsuit__client=user) |
+            Q(lawsuit__created_by__profile__supervisor=user)
+        ).select_related('lawsuit', 'submitted_by_user')
     
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:

@@ -109,8 +109,9 @@ class NotificationProvider extends ChangeNotifier {
   Future<void> _fetchNotificationsFromServer() async {
     try {
       final response = await _apiService.getNotifications();
-      if (response['success'] == true && response['data'] != null) {
-        final List<dynamic> serverNotifications = response['data']['results'] ?? [];
+      if (response is Map && response['success'] == true && response['data'] != null) {
+        final data = response['data'];
+        final List<dynamic> serverNotifications = (data is Map) ? (data['results'] ?? []) : (data is List ? data : []);
         
         // Merge server notifications with local ones
         for (var serverNotif in serverNotifications) {

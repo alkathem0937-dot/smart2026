@@ -9,6 +9,7 @@ class UserProfileInline(admin.StackedInline):
     Inline admin for UserProfile
     """
     model = UserProfile
+    fk_name = 'user'
     can_delete = False
     verbose_name_plural = 'ملف المستخدم'
     fields = ('role', 'phone_number', 'national_id', 'is_active', 'created_at', 'updated_at')

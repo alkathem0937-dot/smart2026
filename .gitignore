@@ -60,3 +60,41 @@ data
 .env
 .env.local
 .env.*.local
+
+# Django local SQLite database
+smartju/db.sqlite3
+
+# Python virtual environments
+my_smart/
+my_smart_new/
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large SQL dumps
+*.sql
+!pg_schema.sql
+
+# Large database files
+*.db
+*.sqlite3
+
+# Chroma vector DB
+rag_engine/chroma_db/
+
+# Media uploads
+smartju/media/
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Byte-compiled / optimized
+*.egg-info/
+dist/
+*.egg

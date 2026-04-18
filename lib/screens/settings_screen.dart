@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
 import 'about_us_screen.dart';
@@ -104,6 +106,17 @@ class SettingsScreen extends StatelessWidget {
                 const SnackBar(content: Text('قريباً: تغيير اللغة')),
               );
             },
+          ),
+          ListTile(
+            leading: const Icon(Icons.dns),
+            title: const Text('عنوان خادم API'),
+            subtitle: Text(
+              ApiConfig.baseUrl,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: () => _showApiBaseUrlDialog(context),
           ),
           const Divider(),
 
@@ -318,6 +331,98 @@ class SettingsScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _showApiBaseUrlDialog(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final initial = prefs.getString(ApiConfig.prefsKeyApiBaseUrl) ?? '';
+    if (!context.mounted) return;
+    final controller = TextEditingController(text: initial);
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('عنوان خادم API'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'يُفضَّل ترك الحقل فارغًا: التطبيق يبحث تلقائيًا عن الخادم على Wi‑Fi.\n\n'
+                  'للتعديل اليدوي فقط (مثال):\nhttp://192.168.1.10:8000',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                    hintText: 'http://192.168.0.147:8000',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // إظهار مؤشر تحميل بسيط
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('جاري البحث عن الخادم في الشبكة المحلية...'),
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+                
+                final discoveredUrl = await ApiConfig.rediscoverLanServer();
+                
+                if (discoveredUrl != null) {
+                  controller.text = discoveredUrl;
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('تم العثور على الخادم: $discoveredUrl'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } else {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('لم يتم العثور على خادم SmartJudi. تأكد من تشغيله على الكمبيوتر بنفس الشبكة.'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('اكتشاف تلقائي'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await ApiConfig.persistBaseUrl(controller.text);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('تم حفظ عنوان الخادم'),
+                    ),
+                  );
+                }
+              },
+              child: const Text('حفظ'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
   }
 }
 

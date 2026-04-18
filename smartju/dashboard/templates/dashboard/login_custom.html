@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول | SmartJudi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 flex items-center justify-center min-h-screen p-6 font-['Cairo']">
+    <div class="w-full max-w-md bg-white rounded-[40px] p-10 shadow-2xl overflow-hidden relative">
+        <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-500 to-yellow-600"></div>
+        
+        <div class="text-center mb-10">
+            <div class="w-16 h-16 bg-amber-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg mb-4">
+                <i class="fas fa-balance-scale text-3xl"></i>
+            </div>
+            <h1 class="text-3xl font-black text-slate-800 mb-2">تسجيل الدخول</h1>
+            <p class="text-slate-500 font-bold">أهلاً بك مجدداً في بوابة القضاء الذكي</p>
+        </div>
+
+        <form method="POST" action="/login/" class="space-y-6">
+            {% csrf_token %}
+            
+            {% if messages %}
+            <div class="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold border border-red-100 mb-4 animate-pulse">
+                {% for message in messages %}
+                    {{ message }}
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div>
+                <label class="block text-slate-700 font-black text-sm mb-2 mr-1">اسم المستخدم</label>
+                <div class="relative">
+                    <i class="fas fa-user absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input type="text" name="username" required class="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl pr-12 pl-4 focus:ring-4 focus:ring-amber-500/10 focus:border-amber-600 outline-none transition-all font-bold">
+                </div>
+            </div>
+            
+            <div>
+                <label class="block text-slate-700 font-black text-sm mb-2 mr-1">كلمة المرور</label>
+                <div class="relative">
+                    <i class="fas fa-lock absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input type="password" name="password" required class="w-full h-14 bg-slate-50 border border-slate-200 rounded-2xl pr-12 pl-4 focus:ring-4 focus:ring-amber-500/10 focus:border-amber-600 outline-none transition-all font-bold">
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between text-sm font-bold">
+                <label class="flex items-center gap-2 cursor-pointer text-slate-600">
+                    <input type="checkbox" class="w-4 h-4 rounded text-amber-600 focus:ring-amber-600">
+                    <span>تذكرني</span>
+                </label>
+                <a href="#" class="text-amber-600 hover:underline">نسيت كلمة المرور؟</a>
+            </div>
+
+            <button type="submit" class="w-full h-14 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-black text-lg shadow-xl shadow-amber-600/20 transition-all transform hover:scale-[1.02]">
+                دخول للمنصة
+            </button>
+        </form>
+
+        <div class="mt-8 pt-8 border-t border-slate-100 text-center">
+            <p class="text-slate-500 font-bold">ليس لديك حساب؟ <a href="/register/" class="text-amber-600 hover:underline">أنشئ حسابك الآن</a></p>
+        </div>
+    </div>
+</body>
+</html>

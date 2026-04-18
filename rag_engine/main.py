@@ -27,7 +27,7 @@ load_dotenv()
 
 EMBEDDING_MODEL_NAME = os.getenv(
     "EMBEDDING_MODEL_NAME",
-    "intfloat/multilingual-e5-base"
+    "intfloat/multilingual-e5-small"
 )
 
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_db")
@@ -293,6 +293,41 @@ async def add_documents(
     return {
         "status": "success",
         "documents_added": len(docs)
+    }
+
+# ---------------------------------------------------
+# Add Documents JSON (Directly from code/DB)
+# ---------------------------------------------------
+
+@app.post("/add_documents_json")
+async def add_documents_json(
+    documents: List[DocumentSchema]
+):
+    if not model_loaded:
+        raise HTTPException(
+            503,
+            "Model still loading"
+        )
+
+    docs = []
+    for doc_schema in documents:
+        # Split text into chunks if needed
+        chunks = text_splitter.split_text(doc_schema.page_content)
+        for chunk in chunks:
+            docs.append(
+                Document(
+                    page_content=chunk,
+                    metadata=doc_schema.metadata
+                )
+            )
+
+    if docs:
+        vectorstore.add_documents(docs)
+
+    return {
+        "status": "success",
+        "documents_added": len(docs),
+        "total_chunks": len(docs)
     }
 
 # ---------------------------------------------------

@@ -64,13 +64,13 @@ class PaymentOrderModel {
   Map<String, dynamic> toJson() {
     return {
       if (id != null) 'id': id,
-      'lawsuit_id': lawsuitId,
-      'amount': amount.toString(),
+      'lawsuit': lawsuitId,
+      'amount': amount,
       if (orderNumber != null) 'order_number': orderNumber,
       'order_date': orderDate.toIso8601String().split('T')[0],
       if (description != null) 'description': description,
       'status': status,
-      'paid_amount': paidAmount.toString(),
+      'paid_amount': paidAmount,
       if (paymentDate != null) 'payment_date': paymentDate!.toIso8601String().split('T')[0],
     };
   }

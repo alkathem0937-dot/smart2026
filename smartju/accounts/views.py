@@ -101,3 +101,51 @@ def register_user(request):
             status=status.HTTP_201_CREATED
         )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_sub_account(request):
+    """
+    Lawyer creating a client or assistant account
+    نظام إنشاء الحسابات الفرعية للموكلين أو المعاونين
+    """
+    try:
+        if not hasattr(request.user, 'profile') or request.user.profile.role != UserProfile.ROLE_LAWYER:
+            return Response({'error': 'هذا الإجراء متاح للمحامين فقط'}, status=status.HTTP_403_FORBIDDEN)
+            
+        phone = request.data.get('phone')
+        full_name = request.data.get('full_name')
+        role = request.data.get('role') # 'citizen' or 'assistant'
+        password = request.data.get('password')
+        
+        if not phone or not full_name or not role:
+            return Response({'error': 'رقم الهاتف، الاسم، والدور مطلوبان'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not password or len(password) < 8:
+            return Response({'error': 'كلمة المرور مطلوبة ويجب أن تكون 8 أحرف على الأقل'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Use phone as username
+        if User.objects.filter(username=phone).exists():
+            return Response({'error': 'حساب بهذا الرقم موجود مسبقاً'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        user = User.objects.create_user(
+            username=phone,
+            password=password,
+            first_name=full_name
+        )
+        
+        profile = user.profile
+        profile.phone_number = phone
+        profile.role = role
+        profile.supervisor = request.user
+        profile.save()
+        
+        return Response({
+            'message': 'تم إنشاء الحساب بنجاح',
+            'username': phone,
+            'role': role,
+            'role_display': profile.get_role_display()
+        }, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        logger.exception(f"Error creating sub-account: {e}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

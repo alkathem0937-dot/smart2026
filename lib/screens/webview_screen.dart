@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// WebView Screen - لعرض الروابط داخل التطبيق مع تحسينات للمواقع الحكومية
+/// WebView Screen – يدعم http و https مع تخزين مؤقت وتحسينات للمواقع الحكومية
 class WebViewScreen extends StatefulWidget {
   final String url;
   final String title;
@@ -26,25 +28,22 @@ class _WebViewScreenState extends State<WebViewScreen> {
   bool _isLoading = true;
   double _progress = 0;
   String? _errorMessage;
+  String _currentUrl = '';
+  String _pageTitle = '';
+  bool _canGoBack = false;
+  bool _canGoForward = false;
   Timer? _timeoutTimer;
+
+  // ── ألوان ──
+  static const _brandDark = Color(0xFF1B5E3B);
+  static const _gold = Color(0xFFD4A940);
 
   @override
   void initState() {
     super.initState();
-    _initializeWebView();
-    _startTimeout();
-  }
-
-  void _startTimeout() {
-    _timeoutTimer?.cancel();
-    _timeoutTimer = Timer(const Duration(seconds: 45), () {
-      if (mounted && _isLoading) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'الموقع يستغرق وقتاً طويلاً للرد. قد يكون هناك ضغط على الخادم أو مشكلة في الاتصال.';
-        });
-      }
-    });
+    _currentUrl = widget.url;
+    _pageTitle = widget.title;
+    _initWebView();
   }
 
   @override
@@ -53,7 +52,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
     super.dispose();
   }
 
-  void _initializeWebView() {
+  // ──────────────────── Init ────────────────────
+  void _initWebView() {
     late final PlatformWebViewControllerCreationParams params;
     if (WebViewPlatform.instance is WebKitWebViewPlatform) {
       params = WebKitWebViewControllerCreationParams(
@@ -65,183 +65,355 @@ class _WebViewScreenState extends State<WebViewScreen> {
 
     _controller = WebViewController.fromPlatformCreationParams(params);
 
-    // User Agent محسّن لضمان قبول الطلب من الخوادم الحكومية
-    const String userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36";
+    const userAgent =
+        'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
 
     _controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
       ..setUserAgent(userAgent)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            if (mounted) {
-              setState(() {
-                _progress = progress / 100;
-                if (progress > 80) _isLoading = false;
-              });
+      ..setNavigationDelegate(NavigationDelegate(
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() {
+            _progress = p / 100;
+            if (p >= 80) _isLoading = false;
+          });
+        },
+        onPageStarted: (url) {
+          developer.log('▶ $url', name: 'WV');
+          _resetTimeout();
+          if (!mounted) return;
+          setState(() {
+            _isLoading = true;
+            _errorMessage = null;
+            _currentUrl = url;
+          });
+        },
+        onPageFinished: (url) {
+          developer.log('✔ $url', name: 'WV');
+          _timeoutTimer?.cancel();
+          if (!mounted) return;
+          setState(() => _isLoading = false);
+          _updateNavState();
+          _controller.getTitle().then((t) {
+            if (t != null && t.isNotEmpty && mounted) {
+              setState(() => _pageTitle = t);
             }
-          },
-          onPageStarted: (String url) {
-            developer.log('Loading: $url', name: 'WebView');
-            if (mounted) {
-              setState(() {
-                _isLoading = true;
-                _errorMessage = null;
-              });
-            }
-          },
-          onPageFinished: (String url) {
-            developer.log('Finished: $url', name: 'WebView');
-            _timeoutTimer?.cancel();
-            if (mounted) {
-              setState(() => _isLoading = false);
-            }
-            // تحسين ظهور الصفحة
-            _controller.runJavaScript("document.body.style.webkitTouchCallout='none';");
-          },
-          onWebResourceError: (WebResourceError error) {
-            developer.log('Error: ${error.errorCode} ${error.description}', name: 'WebView');
-            
-            // تجاهل أخطاء غير مؤثرة
-            if (error.errorCode == -999 || error.errorCode == -1) return;
-
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-                _errorMessage = 'تعذر تحميل الصفحة (${error.errorCode}).\nالمواقع الحكومية قد تتطلب اتصالاً مباشراً بدون VPN أو بروكسي.';
-              });
-            }
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            // السماح بفتح روابط معينة خارج الـ WebView إذا لزم الأمر
-            if (!request.url.startsWith('http')) {
-              _openExternally(request.url);
-              return NavigationDecision.prevent;
-            }
+          });
+        },
+        onWebResourceError: (err) {
+          developer.log('✖ ${err.errorCode}: ${err.description}', name: 'WV');
+          // ignore non-fatal sub-resource errors
+          if (err.errorCode == -999 || err.errorCode == -1 || err.errorCode == -2) return;
+          if (err.isForMainFrame != true) return;
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+            _errorMessage =
+                'تعذر تحميل الصفحة (${err.errorCode})\n'
+                'تحقق من الاتصال بالإنترنت أو حاول مرة أخرى.';
+          });
+        },
+        onHttpError: (resp) {
+          developer.log('HTTP ${resp.response?.statusCode}', name: 'WV');
+        },
+        onNavigationRequest: (req) {
+          final url = req.url;
+          if (url.startsWith('http://') || url.startsWith('https://')) {
             return NavigationDecision.navigate;
-          },
-        ),
-      );
+          }
+          // non-http schemes → open externally (tel:, mailto:, intent:, etc.)
+          _openExternally(url);
+          return NavigationDecision.prevent;
+        },
+      ));
 
-    // إعدادات إضافية للأندرويد
+    // ── Android specifics: caching + SSL ──
     if (_controller.platform is AndroidWebViewController) {
-      final androidController = _controller.platform as AndroidWebViewController;
-      androidController.setMediaPlaybackRequiresUserGesture(false);
+      final android = _controller.platform as AndroidWebViewController;
+      android.setMediaPlaybackRequiresUserGesture(false);
 
-      // السماح بملفات تعريف الارتباط (مهم جداً للمواقع الحكومية التي تتطلب تسجيل دخول)
-      final cookieManager = WebViewCookieManager();
-      cookieManager.setCookie(
-        WebViewCookie(name: 'app_bridge', value: 'true', domain: Uri.parse(widget.url).host),
-      );
+      // Allow mixed content (http resources on https pages)
+      AndroidWebViewController.enableDebugging(false);
+
+      // Cookies
+      final cookieMgr = WebViewCookieManager();
+      try {
+        final host = Uri.parse(widget.url).host;
+        if (host.isNotEmpty) {
+          cookieMgr.setCookie(
+            WebViewCookie(name: 'app', value: '1', domain: host),
+          );
+        }
+      } catch (_) {}
     }
 
     _loadUrl();
   }
 
+  void _resetTimeout() {
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(const Duration(seconds: 60), () {
+      if (mounted && _isLoading) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'الموقع لم يستجب خلال المهلة المحددة.\nقد يكون الخادم متوقفاً حالياً.';
+        });
+      }
+    });
+  }
+
+  Future<void> _updateNavState() async {
+    if (!mounted) return;
+    final back = await _controller.canGoBack();
+    final fwd = await _controller.canGoForward();
+    setState(() {
+      _canGoBack = back;
+      _canGoForward = fwd;
+    });
+  }
+
   void _loadUrl() {
     try {
-      _controller.loadRequest(Uri.parse(widget.url));
-    } catch (e) {
+      final uri = Uri.parse(widget.url);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+      _resetTimeout();
+      _controller.loadRequest(uri);
+    } catch (_) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'الرابط غير صحيح';
+        _errorMessage = 'الرابط غير صالح';
       });
     }
   }
 
+  // ──────────────────── UI ────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(widget.title, style: const TextStyle(fontFamily: 'Cairo', fontSize: 16)),
-        backgroundColor: const Color(0xFF1E3A8A),
+        titleSpacing: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _pageTitle,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              _currentUrl,
+              style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.7)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+        backgroundColor: _brandDark,
         foregroundColor: Colors.white,
-        elevation: 2,
+        elevation: 1,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded, size: 22),
+            tooltip: 'إعادة تحميل',
             onPressed: () {
-              _startTimeout();
+              _resetTimeout();
+              setState(() { _isLoading = true; _errorMessage = null; });
               _controller.reload();
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.open_in_browser),
-            onPressed: () => _openExternally(widget.url),
-            tooltip: 'فتح في المتصفح الخارجي',
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded, size: 22),
+            onSelected: (v) {
+              switch (v) {
+                case 'external':
+                  _openExternally(_currentUrl);
+                  break;
+                case 'share':
+                  Share.share(_currentUrl);
+                  break;
+                case 'copy':
+                  _copyUrl();
+                  break;
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'external', child: Row(children: [
+                Icon(Icons.open_in_browser, size: 20, color: Colors.black54),
+                SizedBox(width: 10),
+                Text('فتح في المتصفح', style: TextStyle(fontSize: 13)),
+              ])),
+              PopupMenuItem(value: 'share', child: Row(children: [
+                Icon(Icons.share_rounded, size: 20, color: Colors.black54),
+                SizedBox(width: 10),
+                Text('مشاركة الرابط', style: TextStyle(fontSize: 13)),
+              ])),
+              PopupMenuItem(value: 'copy', child: Row(children: [
+                Icon(Icons.copy_rounded, size: 20, color: Colors.black54),
+                SizedBox(width: 10),
+                Text('نسخ الرابط', style: TextStyle(fontSize: 13)),
+              ])),
+            ],
           ),
         ],
-        bottom: _isLoading ? PreferredSize(
+        bottom: PreferredSize(
           preferredSize: const Size.fromHeight(3),
-          child: LinearProgressIndicator(
-            value: _progress > 0 ? _progress : null,
-            backgroundColor: Colors.white24,
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+          child: AnimatedOpacity(
+            opacity: _isLoading ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 300),
+            child: LinearProgressIndicator(
+              value: _progress > 0 ? _progress : null,
+              backgroundColor: Colors.white12,
+              valueColor: const AlwaysStoppedAnimation<Color>(_gold),
+              minHeight: 3,
+            ),
           ),
-        ) : null,
+        ),
       ),
-      body: Stack(
+      body: Column(
         children: [
-          WebViewWidget(controller: _controller),
-          if (_errorMessage != null) _buildErrorScreen(),
-          if (_isLoading && _progress < 0.1) _buildInitialLoading(),
+          Expanded(
+            child: Stack(
+              children: [
+                WebViewWidget(controller: _controller),
+                if (_errorMessage != null) _buildError(),
+                if (_isLoading && _progress < 0.05) _buildSplash(),
+              ],
+            ),
+          ),
+          // bottom nav bar
+          _buildBottomBar(),
         ],
       ),
     );
   }
 
-  Widget _buildInitialLoading() {
+  Widget _buildBottomBar() {
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, -2))],
+      ),
+      child: Row(
+        children: [
+          _navBtn(Icons.arrow_back_ios_rounded, _canGoBack, () => _controller.goBack()),
+          _navBtn(Icons.arrow_forward_ios_rounded, _canGoForward, () => _controller.goForward()),
+          const Spacer(),
+          _navBtn(Icons.home_rounded, true, () {
+            _controller.loadRequest(Uri.parse(widget.url));
+            _resetTimeout();
+          }),
+          _navBtn(Icons.open_in_browser_rounded, true, () => _openExternally(_currentUrl)),
+        ],
+      ),
+    );
+  }
+
+  Widget _navBtn(IconData icon, bool enabled, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        child: SizedBox(
+          width: 52,
+          height: 48,
+          child: Icon(icon, size: 20, color: enabled ? _brandDark : Colors.grey[300]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSplash() {
     return Container(
       color: Colors.white,
       child: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(color: Color(0xFF1E3A8A)),
+            SizedBox(
+              width: 48, height: 48,
+              child: CircularProgressIndicator(strokeWidth: 3, color: _brandDark),
+            ),
             const SizedBox(height: 20),
-            const Text('جاري الاتصال بالبوابة الإلكترونية...', style: TextStyle(fontFamily: 'Cairo')),
-            const SizedBox(height: 8),
-            Text(widget.url, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            const Text('جاري الاتصال...', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                _currentUrl,
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildErrorScreen() {
+  Widget _buildError() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 70, color: Colors.red),
+            Container(
+              width: 80, height: 80,
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.wifi_off_rounded, size: 40, color: Colors.red),
+            ),
             const SizedBox(height: 20),
             Text(
               _errorMessage!,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Cairo', fontSize: 16),
+              style: const TextStyle(fontSize: 14, height: 1.7),
             ),
-            const SizedBox(height: 30),
-            ElevatedButton.icon(
-              onPressed: () => _openExternally(widget.url),
-              icon: const Icon(Icons.open_in_browser),
-              label: const Text('فتح في متصفح خارجي', style: TextStyle(fontFamily: 'Cairo')),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextButton(
-              onPressed: () {
-                setState(() => _errorMessage = null);
-                _loadUrl();
-              },
-              child: const Text('إعادة المحاولة داخل التطبيق', style: TextStyle(fontFamily: 'Cairo')),
+            const SizedBox(height: 28),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() => _errorMessage = null);
+                    _loadUrl();
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('إعادة المحاولة', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _brandDark,
+                    side: const BorderSide(color: _brandDark),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: () => _openExternally(_currentUrl),
+                  icon: const Icon(Icons.open_in_browser_rounded, size: 18),
+                  label: const Text('فتح خارجياً', style: TextStyle(fontSize: 13)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -249,25 +421,27 @@ class _WebViewScreenState extends State<WebViewScreen> {
     );
   }
 
+  // ──────────────────── Helpers ────────────────────
   Future<void> _openExternally(String url) async {
     final uri = Uri.parse(url);
     try {
-      // استخدام وضع التصفح الخارجي الصريح لضمان أفضل توافقية
-      bool launched = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!launched) {
-        // محاولة ثانية بوضع مختلف إذا فشل الأول
-        await launchUrl(uri, mode: LaunchMode.platformDefault);
-      }
-    } catch (e) {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) await launchUrl(uri, mode: LaunchMode.platformDefault);
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('تعذر فتح المتصفح الخارجي')),
         );
       }
+    }
+  }
+
+  void _copyUrl() {
+    Clipboard.setData(ClipboardData(text: _currentUrl));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نسخ الرابط'), duration: Duration(seconds: 2)),
+      );
     }
   }
 }

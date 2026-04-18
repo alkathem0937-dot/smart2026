@@ -5,3 +5,6 @@ class HearingsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'hearings'
 
+    def ready(self):
+        import hearings.signals
+

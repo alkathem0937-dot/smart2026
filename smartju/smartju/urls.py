@@ -6,8 +6,15 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
+from django.views.generic import RedirectView
 from django.views.decorators.http import require_http_methods
 from rest_framework.routers import DefaultRouter
+
+from notifications.views import (
+    notifications_detail,
+    notifications_list,
+    notifications_mark_all_read,
+)
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -17,7 +24,7 @@ from drf_yasg import openapi
 
 # Import ViewSets
 from accounts.views import UserProfileViewSet
-from lawsuits.views import LawsuitViewSet, LegalTemplateViewSet, FinancialClaimViewSet
+from lawsuits.views import CaseViewSet, CasePartyViewSet, LawsuitViewSet, LegalTemplateViewSet, FinancialClaimViewSet, CaseFileItemViewSet
 from parties.views import PlaintiffViewSet, DefendantViewSet
 from attachments.views import AttachmentViewSet
 from responses.views import ResponseViewSet
@@ -36,13 +43,17 @@ from laws.views import (
     LegalArticleFlatViewSet, LegalProcedureViewSet
 )
 from logs.views import UserSessionViewSet, SearchLogViewSet, AIChatLogViewSet
+from lawyers.views import LawyerViewSet, LawyerFilterOptionsViewSet
 
 # Create router
 router = DefaultRouter()
 router.register(r'profiles', UserProfileViewSet, basename='profile')
+router.register(r'cases', CaseViewSet, basename='case')
+router.register(r'case-parties', CasePartyViewSet, basename='case-party')
 router.register(r'lawsuits', LawsuitViewSet, basename='lawsuit')
 router.register(r'legal-templates', LegalTemplateViewSet, basename='legal-template')
 router.register(r'financial-claims', FinancialClaimViewSet, basename='financial-claim')
+router.register(r'case-file-items', CaseFileItemViewSet, basename='case-file-item')
 router.register(r'plaintiffs', PlaintiffViewSet, basename='plaintiff')
 router.register(r'defendants', DefendantViewSet, basename='defendant')
 router.register(r'attachments', AttachmentViewSet, basename='attachment')
@@ -50,6 +61,8 @@ router.register(r'responses', ResponseViewSet, basename='response')
 router.register(r'appeals', AppealViewSet, basename='appeal')
 router.register(r'hearings', HearingViewSet, basename='hearing')
 router.register(r'judgments', JudgmentViewSet, basename='judgment')
+router.register(r'lawyers', LawyerViewSet, basename='lawyer')
+router.register(r'lawyer-filter-options', LawyerFilterOptionsViewSet, basename='lawyer-filter-option')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 # Courts
 router.register(r'governorates', GovernorateViewSet, basename='governorate')
@@ -188,18 +201,41 @@ def home_view(request):
     }, json_dumps_params={'ensure_ascii': False, 'indent': 2})
 
 
+from dashboard.views import intro_page, custom_login, custom_register, web_portal
+
+
 urlpatterns = [
-    # Health check endpoints (for Render) - must be first and simple
-    path('health/', health_check, name='health'),
-    path('health', health_check, name='health_no_slash'),  # Without trailing slash
-    # Root endpoint - simple for Render health checks, but also show home info
-    path('', home_view, name='home'),
+    # Health check endpoints (for Discovery and Render)
+    path('health', health_check, name='health_no_slash'),
+    path('health/', health_check, name='health_slash'),
+    path('api/health/', health_check, name='api_health'),
+    
+    # Root endpoint - Now points to the full website landing page
+    path('', intro_page, name='landing'),
+    path('login/', custom_login, name='custom-login'),
+    path('register/', custom_register, name='custom-register'),
+    path('portal/', web_portal, name='portal'),
+    
+    # API info legacy endpoint
+    path('api/info/', home_view, name='home'),
+    
+    # Auto-fix browser caching redirects to accounts/login
+    path('accounts/login/', RedirectView.as_view(url='/login/', permanent=False)),
+    
+    # Custom Web Dashboard
+    path('dashboard/', include('dashboard.urls')),
     
     # Admin
     path('admin/', admin.site.urls),
+
     
     # API Routes
     path('api/', include(router.urls)),
+
+    # إشعارات التطبيق (Flutter يتوقع JSON وليس صفحة 404 HTML)
+    path('api/notifications/mark-all-read/', notifications_mark_all_read),
+    path('api/notifications/<str:pk>/', notifications_detail),
+    path('api/notifications/', notifications_list),
     
     # JWT Authentication
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -210,6 +246,7 @@ urlpatterns = [
     
     # AI Assistant (المساعد الذكي)
     path('api/ai/', include('ai_assistant.urls')),
+    path('api/messaging/', include('messaging.urls')),
     
     # Swagger/OpenAPI Documentation
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

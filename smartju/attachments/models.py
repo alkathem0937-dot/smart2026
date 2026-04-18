@@ -1,5 +1,6 @@
 from django.db import models
 from lawsuits.models import Lawsuit
+from smartju.validators import validate_file_size, validate_file_extension
 import os
 
 
@@ -59,11 +60,15 @@ class Attachment(models.Model):
     
     # Dates
     gregorian_date = models.DateField(
+        blank=True,
+        null=True,
         verbose_name='التاريخ الميلادي'
     )
     
     hijri_date = models.CharField(
         max_length=50,
+        blank=True,
+        default='',
         verbose_name='التاريخ الهجري'
     )
     
@@ -75,18 +80,25 @@ class Attachment(models.Model):
     
     # Document content/description
     content = models.TextField(
+        blank=True,
+        default='',
         verbose_name='مضمون المستند'
     )
     
     # Evidence basis/purpose
     evidence_basis = models.TextField(
+        blank=True,
+        default='',
         verbose_name='وجه الاستدلال'
     )
     
     # File attachment
     file = models.FileField(
         upload_to=attachment_upload_path,
-        verbose_name='الملف المرفق'
+        blank=True,
+        null=True,
+        verbose_name='الملف المرفق',
+        validators=[validate_file_size, validate_file_extension],
     )
     
     # File name (stored separately for reference)
