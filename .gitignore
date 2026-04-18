@@ -1,9 +1,91 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# ═══════════════════════════════════════════════════
+# SmartJudi .gitignore
+# ═══════════════════════════════════════════════════
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+*.whl
+
+# ─── Python Virtual Environments ───
+my_smart/
+my_smart_new/
+venv/
+.venv/
+env/
+
+# ─── Django ───
+smartju/db.sqlite3
+smartju/media/
+smartju/staticfiles/
+smartju/mysite_data.json
+smartju/data_backup.json
+
+# ─── Database Files ───
+*.db
+*.sqlite3
+rag_engine/chroma_db/
+
+# ─── SQL Dumps (keep only schema) ───
+*.sql
+!pg_schema.sql
+
+# ─── Flutter / Dart ───
+/build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+app.*.symbols
+app.*.map.json
+
+# ─── Android ───
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/.gradle/
+/android/.kotlin/
+/android/app/build/
+
+# ─── Environment Variables ───
+.env
+.env.local
+.env.*.local
+microservices/.env
+
+# ─── IDE ───
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/settings.json
+
+# ─── OS Files ───
 .DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*.bak
+
+# ─── Logs ───
+*.log
+
+# ─── Large Data ───
+*.data
+.import_checkpoint.json
+
+# ─── Misc ───
+*.class
 .atom/
 .build/
 .buildlog/
@@ -12,89 +94,14 @@
 .swiftpm/
 migrate_working_dir/
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
+# ─── QA Reports (captured in docs/) ───
+QA_REPORTS/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# ─── Temp scripts ───
+scripts/_analyze_project.py
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-# Exception: Allow build/web for Render deployment
-!/build/web/
-# Exception: Allow build/web for Render deployment
-!/build/web/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# Large data files (Ollama models, etc.)
-/data
-data
-*.data
-
-# Import checkpoint files
-.import_checkpoint.json
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# Django local SQLite database
-smartju/db.sqlite3
-
-# Python virtual environments
-my_smart/
-my_smart_new/
-venv/
-.venv/
-env/
-
-# Python cache
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Large SQL dumps
-*.sql
-!pg_schema.sql
-
-# Large database files
-*.db
-*.sqlite3
-
-# Chroma vector DB
-rag_engine/chroma_db/
-
-# Media uploads
-smartju/media/
-
-# OS files
-Thumbs.db
-Desktop.ini
-
-# Byte-compiled / optimized
-*.egg-info/
-dist/
-*.egg
+# ─── Data dumps / exports ───
+smartju/chunked_import*.py
+smartju/export_data.py
+smartju/*.json
+!smartju/package.json
