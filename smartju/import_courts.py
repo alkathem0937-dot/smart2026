@@ -56,5 +56,5 @@ def import_courts(json_file_path):
     print("Done!")
 
 if __name__ == "__main__":
-    json_path = r'd:\smartjudi2-2\governorates_courts_final.json'
+    json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'governorates_courts_final.json')
     import_courts(json_path)

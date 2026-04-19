@@ -28,7 +28,7 @@ class RAGService:
         if not self.client:
             raise ConnectionError("RAG client is not initialized (RAG_API_URL missing).")
         try:
-            response = self.client.request(method, endpoint, json=json_data)
+            response = self.client.request(method, endpoint, json=json_data, timeout=60.0)
             response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
             return response.json()
         except httpx.RequestError as e:
@@ -52,16 +52,31 @@ class RAGService:
         except Exception:
             return False
 
-    def add_documents(self, documents: List[Dict]) -> bool:
+    def add_documents(self, documents) -> bool:
         """
-        Adds a list of documents to the RAG engine.
-        يضيف قائمة من المستندات إلى محرك RAG.
-        documents example: [{"page_content": "text", "metadata": {"source": "law_book"}}]
+        Adds documents to the RAG engine.
+        يضيف مستندات إلى محرك RAG.
+        Accepts either:
+          - List of tuples (filename, content_bytes, content_type) for file upload
+          - List of dicts [{"page_content": "text", "metadata": {...}}] for JSON
         """
         try:
-            response = self._make_request("POST", "/add_documents", json=documents)
-            logger.info(f"RAG API add_documents response: {response}")
-            return "Successfully added" in response.get("message", "")
+            if documents and isinstance(documents[0], (tuple, list)):
+                # File upload via multipart — use /add_documents
+                if not self.client:
+                    raise ConnectionError("RAG client is not initialized (RAG_API_URL missing).")
+                files = [
+                    ("files", (name, content, ctype))
+                    for name, content, ctype in documents
+                ]
+                response = self.client.post("/add_documents", files=files)
+                response.raise_for_status()
+                result = response.json()
+            else:
+                # JSON payload — use /add_documents_json (correct endpoint)
+                result = self._make_request("POST", "/add_documents_json", json_data=documents)
+            logger.info(f"RAG API add_documents response: {result}")
+            return result.get("status") == "success"
         except Exception as e:
             logger.error(f"Failed to add documents to RAG: {e}")
             return False
@@ -78,25 +93,27 @@ class RAGService:
             logger.error(f"Failed to search documents in RAG: {e}")
             return []
 
-    def delete_documents(self, ids: Optional[List[str]] = None, metadata_filter: Optional[Dict[str, Any]] = None) -> bool:
+    def delete_documents(self, source: str = None, ids: Optional[List[str]] = None, metadata_filter: Optional[Dict[str, Any]] = None) -> bool:
         """
-        Deletes documents from the RAG engine based on IDs or metadata filter.
-        يحذف المستندات من محرك RAG بناءً على المعرفات أو فلتر البيانات الوصفية.
+        Deletes documents from the RAG engine based on source name, IDs, or metadata filter.
+        يحذف المستندات من محرك RAG بناءً على اسم المصدر أو المعرفات أو فلتر البيانات الوصفية.
         """
         payload = {}
+        if source:
+            payload["source"] = source
         if ids:
             payload["ids"] = ids
         if metadata_filter:
             payload["metadata_filter"] = metadata_filter
 
         if not payload:
-            logger.warning("No IDs or metadata filter provided for document deletion.")
+            logger.warning("No source, IDs, or metadata filter provided for document deletion.")
             return False
 
         try:
-            response = self._make_request("POST", "/delete_documents", json=payload)
+            response = self._make_request("DELETE", "/delete_documents", json_data=payload)
             logger.info(f"RAG API delete_documents response: {response}")
-            return "Successfully deleted" in response.get("message", "")
+            return response.get("status") == "success"
         except Exception as e:
             logger.error(f"Failed to delete documents from RAG: {e}")
             return False

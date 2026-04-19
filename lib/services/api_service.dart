@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
+import '../core/errors/api_exception.dart';
 import '../models/user_model.dart';
 import '../models/lawsuit_model.dart';
 import '../models/case_model.dart';
@@ -221,27 +222,45 @@ class ApiService {
         if (_refreshToken != null && endpoint != ApiConfig.loginEndpoint) {
           final refreshed = await refreshAccessToken();
           if (refreshed) {
-            // Retry the request
             return _makeRequest(method, endpoint, body: body, files: files);
           }
         }
-        // For login endpoint, return a clear error message
         final detail = responseData['detail']?.toString() ?? '';
-        if (detail.contains('No active account') || 
+        if (detail.contains('No active account') ||
             detail.contains('Unable to log in') ||
             detail.isEmpty) {
-          throw Exception('Invalid credentials');
+          throw const ApiException(
+            message: 'Invalid credentials',
+            code: ApiErrorCode.invalidCredentials,
+            statusCode: 401,
+          );
         }
-        throw Exception('Unauthorized: $detail');
+        throw ApiException(
+          message: detail,
+          code: ApiErrorCode.unauthorized,
+          statusCode: 401,
+        );
+      } else if (response.statusCode == 403) {
+        throw ApiException(
+          message: responseData['detail']?.toString() ?? 'Forbidden',
+          code: ApiErrorCode.forbidden,
+          statusCode: 403,
+        );
+      } else if (response.statusCode == 404) {
+        throw ApiException(
+          message: responseData['detail']?.toString() ?? 'Not found',
+          code: ApiErrorCode.notFound,
+          statusCode: 404,
+        );
       } else {
-        // Better error handling for validation errors
+        // Validation / other errors
         String errorMessage = 'Request failed';
+        Map<String, dynamic>? fieldErrors;
         if (responseData is Map<String, dynamic>) {
-          // Handle Django REST Framework validation errors
           if (responseData.containsKey('detail')) {
             errorMessage = responseData['detail'].toString();
           } else {
-            // Collect all validation errors
+            fieldErrors = Map<String, dynamic>.from(responseData);
             final errors = <String>[];
             responseData.forEach((key, value) {
               if (value is List) {
@@ -252,29 +271,43 @@ class ApiService {
                 errors.add('$key: ${value.toString()}');
               }
             });
-            if (errors.isNotEmpty) {
-              errorMessage = errors.join('\n');
-            }
+            if (errors.isNotEmpty) errorMessage = errors.join('\n');
           }
         }
-        throw Exception(errorMessage);
+        throw ApiException(
+          message: errorMessage,
+          code: response.statusCode >= 500 ? ApiErrorCode.serverError : ApiErrorCode.validation,
+          statusCode: response.statusCode,
+          fieldErrors: fieldErrors,
+        );
       }
+    } on ApiException {
+      rethrow;
     } catch (e, stackTrace) {
       print('❌ [API] Exception in _makeRequest: $e');
       print('📋 [API] Stack trace: $stackTrace');
-      
-      String errorMessage;
-      if (e.toString().contains('TimeoutException') || e.toString().contains('timeout')) {
-        errorMessage = 'انتهت مهلة الاتصال. يرجى التحقق من اتصال الإنترنت والخادم على العنوان: ${ApiConfig.baseUrl}';
-      } else if (e.toString().contains('SocketException') || e.toString().contains('Failed host lookup')) {
-        errorMessage = 'فشل الاتصال بالخادم. يرجى التحقق من:\n1. تشغيل الخادم على ${ApiConfig.baseUrl}\n2. اتصال الإنترنت\n3. عنوان IP الصحيح';
-      } else if (e.toString().contains('Connection refused')) {
-        errorMessage = 'تم رفض الاتصال بالخادم. تأكد من تشغيل الخادم على ${ApiConfig.baseUrl}';
-      } else {
-        errorMessage = 'خطأ في الشبكة: ${e.toString()}';
+
+      final msg = e.toString();
+      if (msg.contains('TimeoutException') || msg.contains('timeout')) {
+        throw ApiException(
+          message: 'انتهت مهلة الاتصال (${ApiConfig.baseUrl})',
+          code: ApiErrorCode.timeout,
+        );
+      } else if (msg.contains('SocketException') || msg.contains('Failed host lookup')) {
+        throw ApiException(
+          message: 'فشل الاتصال بالخادم (${ApiConfig.baseUrl})',
+          code: ApiErrorCode.noConnection,
+        );
+      } else if (msg.contains('Connection refused')) {
+        throw ApiException(
+          message: 'تم رفض الاتصال (${ApiConfig.baseUrl})',
+          code: ApiErrorCode.connectionRefused,
+        );
       }
-      
-      throw Exception(errorMessage);
+      throw ApiException(
+        message: msg,
+        code: ApiErrorCode.unknown,
+      );
     }
   }
 

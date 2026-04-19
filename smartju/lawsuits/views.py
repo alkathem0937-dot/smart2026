@@ -1,7 +1,11 @@
+import logging
+
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+
+logger = logging.getLogger(__name__)
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as django_filters
 from django.db.models import Q, Count
@@ -183,7 +187,11 @@ class CasePartyViewSet(viewsets.ModelViewSet):
 
         response_data = self.get_serializer(party).data
         if generated_password:
-            response_data['generated_password'] = generated_password
+            response_data['account_created'] = True
+            response_data['account_username'] = party.phone.strip()
+            # Password is NOT returned in API response for security.
+            # It should be sent via SMS or secure channel instead.
+            logger.info(f"Auto-created account for party '{party.name}' (username: {party.phone.strip()}). Password must be communicated securely.")
         return Response(response_data, status=status.HTTP_201_CREATED)
 
 

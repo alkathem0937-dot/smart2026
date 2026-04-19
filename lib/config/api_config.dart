@@ -99,16 +99,17 @@ class ApiConfig {
     }
     final env = _fromEnvironment.trim();
     if (env.isNotEmpty) return _normalizeUrl(env);
-    if (kIsWeb) return 'http://localhost:8000';
+    if (kIsWeb) return 'http://localhost:$_defaultBackendPort';
     if (Platform.isAndroid) {
-      if (_androidIsPhysicalDevice != false) {
-        // إذا فشل الاكتشاف التلقائي، نستخدم IP الجهاز الحالي كنقطة بداية
-        return 'http://192.168.0.147:$_defaultBackendPort';
+      if (_androidIsPhysicalDevice == false) {
+        return 'http://10.0.2.2:$_defaultBackendPort';
       }
-      return 'http://10.0.2.2:$_defaultBackendPort';
+      // Physical device: LAN discovery should have set _savedOverride.
+      // If it failed, return loopback as safe fallback (user can change in settings).
+      return 'http://127.0.0.1:$_defaultBackendPort';
     }
-    if (Platform.isIOS) return 'http://localhost:8000';
-    return 'http://localhost:8000';
+    if (Platform.isIOS) return 'http://localhost:$_defaultBackendPort';
+    return 'http://localhost:$_defaultBackendPort';
   }
 
   /// حفظ عنوان الخادم (مثلاً `http://192.168.1.10:8000`) أو مسحه لاستخدام الافتراضي.

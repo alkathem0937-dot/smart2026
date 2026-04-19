@@ -157,10 +157,10 @@ class Command(BaseCommand):
         ]
         
         statuses = [
-            Lawsuit.STATUS_PENDING,
-            Lawsuit.STATUS_IN_PROGRESS,
+            Lawsuit.STATUS_NEW,
             Lawsuit.STATUS_UNDER_REVIEW,
-            Lawsuit.STATUS_JUDGED,
+            Lawsuit.STATUS_COMPLETED,
+            Lawsuit.STATUS_CLOSED,
         ]
         
         lawsuits = []
@@ -178,7 +178,7 @@ class Command(BaseCommand):
                 facts=f'وقائع الدعوى رقم {i+1}، حيث قام المدعي برفع دعوى ضد المدعى عليه بسبب...',
                 reasons='الأسباب والأسانيد القانونية: طبقاً للمادة...',
                 requests='الطلبات المقدمة: الحكم لصالح المدعي...',
-                status=random.choice(statuses),
+                case_status=random.choice(statuses),
                 created_by=random.choice(lawyer_users) if i % 3 != 0 else random.choice(citizen_users),
             )
             lawsuits.append(lawsuit)
@@ -284,7 +284,7 @@ class Command(BaseCommand):
         ]
         
         lawyer_users = [u for u in users.values() if u.profile.role == UserProfile.ROLE_LAWYER]
-        judged_lawsuits = [ls for ls in lawsuits if ls.status == Lawsuit.STATUS_JUDGED][:3]
+        judged_lawsuits = [ls for ls in lawsuits if ls.case_status == Lawsuit.STATUS_COMPLETED][:3]
         
         for i, lawsuit in enumerate(judged_lawsuits):
             Appeal.objects.create(
@@ -344,7 +344,7 @@ class Command(BaseCommand):
         ]
         
         judge_users = [u for u in users.values() if u.profile.role == UserProfile.ROLE_JUDGE]
-        judged_lawsuits = [ls for ls in lawsuits if ls.status in [Lawsuit.STATUS_JUDGED, Lawsuit.STATUS_APPEALED]][:5]
+        judged_lawsuits = [ls for ls in lawsuits if ls.case_status in [Lawsuit.STATUS_COMPLETED, Lawsuit.STATUS_CLOSED]][:5]
         
         for i, lawsuit in enumerate(judged_lawsuits):
             Judgment.objects.create(

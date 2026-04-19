@@ -19,11 +19,8 @@ ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', '')
 if ALLOWED_HOSTS_STR:
     ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
 else:
-    ALLOWED_HOSTS = ['*']  # Fallback for initial setup
-
-# Add Render internal host for health checks
-ALLOWED_HOSTS.append('smartjudi-nls1.onrender.com')
-ALLOWED_HOSTS.append('*.onrender.com')
+    # Only allow Render domains by default — never use '*' in production
+    ALLOWED_HOSTS = ['smartjudi-nls1.onrender.com', '.onrender.com', 'localhost', '127.0.0.1']
 
 # Database - use Render's DATABASE_URL
 DATABASES = {
@@ -49,19 +46,17 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
 # CORS settings for production
-# Allow Flutter Web and other Render domains
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS_ENV = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if CORS_ALLOWED_ORIGINS_ENV:
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in CORS_ALLOWED_ORIGINS_ENV.split(',') if origin.strip()]
-    CORS_ALLOW_ALL_ORIGINS = False
 else:
-    # Default: Allow all Render domains (for Flutter Web)
     CORS_ALLOWED_ORIGINS = []
-    # Allow all Render domains by default
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^https://.*\.onrender\.com$",
-    ]
-    CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins by default if not specified
+
+# Always allow Render subdomains via regex
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.onrender\.com$",
+]
 
 # Allow credentials for authenticated requests
 CORS_ALLOW_CREDENTIALS = True

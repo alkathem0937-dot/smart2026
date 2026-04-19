@@ -203,6 +203,11 @@ class SearchQuery(BaseModel):
     query_text: str
     k: int = 4
 
+class DeleteRequest(BaseModel):
+    source: Optional[str] = None
+    ids: Optional[List[str]] = None
+    metadata_filter: Optional[Dict[str, Any]] = None
+
 # ---------------------------------------------------
 # OCR
 # ---------------------------------------------------
@@ -360,3 +365,46 @@ async def search(query: SearchQuery):
         })
 
     return response
+
+# ---------------------------------------------------
+# Delete Documents
+# ---------------------------------------------------
+
+@app.delete("/delete_documents")
+async def delete_documents(req: DeleteRequest):
+
+    if not model_loaded:
+        raise HTTPException(503, "Model still loading")
+
+    if not req.source and not req.ids and not req.metadata_filter:
+        raise HTTPException(400, "Provide 'source', 'ids', or 'metadata_filter'")
+
+    try:
+        where_filter = None
+        if req.source:
+            where_filter = {"source": req.source}
+        elif req.metadata_filter:
+            where_filter = req.metadata_filter
+
+        collection = vectorstore._collection
+
+        if req.ids:
+            collection.delete(ids=req.ids)
+            deleted_count = len(req.ids)
+        elif where_filter:
+            results = collection.get(where=where_filter)
+            if results and results["ids"]:
+                collection.delete(ids=results["ids"])
+                deleted_count = len(results["ids"])
+            else:
+                deleted_count = 0
+        else:
+            deleted_count = 0
+
+        return {
+            "status": "success",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        logger.error(f"Delete documents failed: {e}")
+        raise HTTPException(500, f"Delete failed: {str(e)}")
