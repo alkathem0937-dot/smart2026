@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../services/api_service.dart';
+import '../services/biometric_service.dart';
 import '../models/user_model.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 
@@ -199,7 +200,14 @@ class AuthProvider with ChangeNotifier {
         return false;
       }
 
-      // Success - user is loaded
+      // Success — update biometric credentials if enabled
+      try {
+        final bio = BiometricService.instance;
+        if (await bio.isEnabled) {
+          await bio.enable(username, password);
+        }
+      } catch (_) {}
+
       _isLoading = false;
       notifyListeners();
       return true;
@@ -305,6 +313,29 @@ class AuthProvider with ChangeNotifier {
   // Get ApiService instance (for use in screens)
   ApiService get apiService => _apiService;
   
+  /// تسجيل الدخول بالبصمة
+  Future<bool> biometricLogin() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final credentials =
+          await BiometricService.instance.authenticateAndGetCredentials();
+      if (credentials == null) {
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+      return await login(credentials.username, credentials.password);
+    } catch (e) {
+      _errorMessage = 'فشل تسجيل الدخول بالبصمة';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   // Refresh user profile
   Future<void> refreshProfile() async {
     try {

@@ -4,14 +4,121 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/biometric_service.dart';
 import 'about_us_screen.dart';
 import 'contact_us_screen.dart';
 import 'edit_profile_screen.dart';
 import 'change_password_screen.dart';
 
 /// Settings Screen - الإعدادات
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _biometricSupported = false;
+  bool _biometricEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBiometricState();
+  }
+
+  Future<void> _loadBiometricState() async {
+    final bio = BiometricService.instance;
+    final supported = await bio.isDeviceSupported;
+    final enabled = await bio.isEnabled;
+    if (mounted) {
+      setState(() {
+        _biometricSupported = supported;
+        _biometricEnabled = enabled;
+      });
+    }
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    final bio = BiometricService.instance;
+    if (value) {
+      // التفعيل — نطلب من المستخدم إدخال كلمة المرور لحفظ البيانات
+      final result = await _showEnableBiometricDialog();
+      if (result == true && mounted) {
+        setState(() => _biometricEnabled = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تفعيل تسجيل الدخول بالبصمة'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } else {
+      // الإلغاء
+      await bio.disable();
+      if (mounted) {
+        setState(() => _biometricEnabled = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم إلغاء تسجيل الدخول بالبصمة'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<bool> _showEnableBiometricDialog() async {
+    final passwordController = TextEditingController();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final username = authProvider.currentUser?.username;
+
+    if (username == null) return false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تفعيل الدخول بالبصمة'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('أدخل كلمة المرور لحفظ بيانات الدخول بشكل آمن:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'كلمة المرور',
+                prefixIcon: Icon(Icons.lock),
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('تفعيل'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || passwordController.text.isEmpty) {
+      passwordController.dispose();
+      return false;
+    }
+
+    final bio = BiometricService.instance;
+    final success = await bio.enable(username, passwordController.text);
+    passwordController.dispose();
+    return success;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +202,14 @@ class SettingsScreen extends StatelessWidget {
               settingsProvider.setDarkModeEnabled(value);
             },
           ),
+          if (_biometricSupported)
+            SwitchListTile(
+              secondary: const Icon(Icons.fingerprint),
+              title: const Text('تسجيل الدخول بالبصمة'),
+              subtitle: const Text('استخدم بصمتك لتسجيل الدخول بسرعة'),
+              value: _biometricEnabled,
+              onChanged: _toggleBiometric,
+            ),
           ListTile(
             leading: const Icon(Icons.language),
             title: const Text('اللغة'),

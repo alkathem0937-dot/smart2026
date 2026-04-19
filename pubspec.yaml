@@ -119,6 +119,10 @@ dependencies:
   sqflite: ^2.3.0
   path: ^1.9.0
 
+  # Biometric Authentication (fingerprint / face)
+  local_auth: ^2.3.0
+  flutter_secure_storage: ^9.2.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -151,8 +155,6 @@ flutter:
 
   assets:
     - assets/images/logo.png
-    - legal.db
-    - legal_search.db
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

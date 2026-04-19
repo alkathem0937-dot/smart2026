@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../config/api_config.dart';
 import '../providers/auth_provider.dart';
+import '../services/biometric_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme.dart';
@@ -23,11 +24,35 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _rememberMe = true;
   bool _discovering = false;
+  bool _biometricAvailable = false;
 
   @override
   void initState() {
     super.initState();
     _loadSavedUsername();
+    _checkBiometric();
+  }
+
+  Future<void> _checkBiometric() async {
+    final bio = BiometricService.instance;
+    final available = await bio.hasStoredCredentials;
+    if (mounted) setState(() => _biometricAvailable = available);
+  }
+
+  Future<void> _handleBiometricLogin() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.biometricLogin();
+    if (success && mounted) {
+      Navigator.pushReplacementNamed(context, '/');
+    } else if (mounted && authProvider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.errorMessage!),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _loadSavedUsername() async {
@@ -314,6 +339,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       ).animate().fade(delay: 1000.ms).slideY(begin: 0.2),
                       
                       const SizedBox(height: AppSpacing.md),
+
+                      // Biometric Button
+                      if (_biometricAvailable)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                          child: OutlinedButton.icon(
+                            onPressed: _handleBiometricLogin,
+                            icon: const Icon(Icons.fingerprint, size: 28),
+                            label: const Text('تسجيل الدخول بالبصمة'),
+                          ),
+                        ).animate().fade(delay: 1050.ms).slideY(begin: 0.2),
 
                       // Guest Button
                       OutlinedButton(
